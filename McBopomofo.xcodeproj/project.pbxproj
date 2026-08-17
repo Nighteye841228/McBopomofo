@@ -27,6 +27,7 @@
 		6A833E4E2F0A0F7F0086AD0C /* bpmfvs-variants.txt in Resources */ = {isa = PBXBuildFile; fileRef = 6A833E4B2F0A0F7F0086AD0C /* bpmfvs-variants.txt */; };
 		6A833E4F2F0A0F7F0086AD0C /* bpmfvs-pua.txt in Resources */ = {isa = PBXBuildFile; fileRef = 6A833E4A2F0A0F7F0086AD0C /* bpmfvs-pua.txt */; };
 		6A833E522F0A0FB30086AD0C /* VariantAnnotator.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 6A833E512F0A0FB30086AD0C /* VariantAnnotator.cpp */; };
+		A11F00013000000100000001 /* MixedInputSegmenter.cpp in Sources */ = {isa = PBXBuildFile; fileRef = A11F00023000000100000001 /* MixedInputSegmenter.cpp */; };
 		6ACA41FA15FC1D9000935EF6 /* InfoPlist.strings in Resources */ = {isa = PBXBuildFile; fileRef = 6ACA41EA15FC1D9000935EF6 /* InfoPlist.strings */; };
 		6ACA41FB15FC1D9000935EF6 /* License.rtf in Resources */ = {isa = PBXBuildFile; fileRef = 6ACA41EC15FC1D9000935EF6 /* License.rtf */; };
 		6ACA41FC15FC1D9000935EF6 /* Localizable.strings in Resources */ = {isa = PBXBuildFile; fileRef = 6ACA41EE15FC1D9000935EF6 /* Localizable.strings */; };
@@ -198,6 +199,8 @@
 		D41355DA278E6D17005E5CBD /* McBopomofoLM.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = McBopomofoLM.h; sourceTree = "<group>"; };
 		D41355DC278EA3ED005E5CBD /* UserPhrasesLM.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; path = UserPhrasesLM.cpp; sourceTree = "<group>"; };
 		D41355DD278EA3ED005E5CBD /* UserPhrasesLM.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = UserPhrasesLM.h; sourceTree = "<group>"; };
+		A11F00023000000100000001 /* MixedInputSegmenter.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; path = MixedInputSegmenter.cpp; sourceTree = "<group>"; };
+		A11F00033000000100000001 /* MixedInputSegmenter.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = MixedInputSegmenter.h; sourceTree = "<group>"; };
 		D41B626A2B86EAD400583148 /* BopomofoBraille */ = {isa = PBXFileReference; lastKnownFileType = wrapper; name = BopomofoBraille; path = Packages/BopomofoBraille; sourceTree = "<group>"; };
 		D41B626D2B87B5C100583148 /* ServiceProviderInputHelper.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = ServiceProviderInputHelper.h; sourceTree = "<group>"; };
 		D41B626E2B87B5C100583148 /* ServiceProviderInputHelper.mm */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.objcpp; path = ServiceProviderInputHelper.mm; sourceTree = "<group>"; };
@@ -376,6 +379,8 @@
 				6A660A6E2EAF371000D53D7B /* ByteBlockBackedDictionary.h */,
 				D41355D9278E6D17005E5CBD /* McBopomofoLM.cpp */,
 				D41355DA278E6D17005E5CBD /* McBopomofoLM.h */,
+				A11F00023000000100000001 /* MixedInputSegmenter.cpp */,
+				A11F00033000000100000001 /* MixedInputSegmenter.h */,
 				6ADF5B152BA513E000577D98 /* MemoryMappedFile.cpp */,
 				6ADF5B142BA513E000577D98 /* MemoryMappedFile.h */,
 				6ACC3D422793701600F1B140 /* ParselessLM.cpp */,
@@ -749,6 +754,7 @@
 				D47F7DD0278C0897002F9DD7 /* NonModalAlertWindowController.swift in Sources */,
 				D456576E279E4F7B00DF6BC9 /* KeyHandlerInput.swift in Sources */,
 				D41355DB278E6D17005E5CBD /* McBopomofoLM.cpp in Sources */,
+				A11F00013000000100000001 /* MixedInputSegmenter.cpp in Sources */,
 				D47F7DD3278C1263002F9DD7 /* UserOverrideModel.cpp in Sources */,
 				6A0D4F4515FC0EB100ABF4B3 /* Mandarin.cpp in Sources */,
 				6ACC3D452793701600F1B140 /* ParselessLM.cpp in Sources */,

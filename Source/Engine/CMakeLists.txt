@@ -14,6 +14,8 @@ add_library(McBopomofoLMLib
         ByteBlockBackedDictionary.cpp
         McBopomofoLM.cpp
         McBopomofoLM.h
+        MixedInputSegmenter.cpp
+        MixedInputSegmenter.h
         MemoryMappedFile.h
         MemoryMappedFile.cpp
         ParselessPhraseDB.cpp
@@ -30,6 +32,7 @@ add_library(McBopomofoLMLib
         UserPhrasesLM.cpp
         VariantAnnotator.h
         VariantAnnotator.cpp)
+target_link_libraries(McBopomofoLMLib PUBLIC MandarinLib)
 
 if (ENABLE_CLANG_TIDY)
     set_target_properties(McBopomofoLMLib PROPERTIES CXX_CLANG_TIDY "${CLANG_TIDY_COMMAND}")
@@ -70,6 +73,7 @@ if (ENABLE_TEST)
                 AssociatedPhrasesV2Test.cpp
                 ByteBlockBackedDictionaryTest.cpp
                 McBopomofoLMTest.cpp
+                MixedInputSegmenterTest.cpp
                 MemoryMappedFileTest.cpp
                 ParselessLMTest.cpp
                 ParselessPhraseDBTest.cpp
