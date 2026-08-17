@@ -615,6 +615,15 @@ class InputState: NSObject {
             super.init(composingBuffer: composingBuffer, cursorIndex: cursorIndex)
         }
 
+        @objc var attributedString: NSAttributedString {
+            NSAttributedString(
+                string: composingBuffer,
+                attributes: [
+                    .underlineStyle: NSUnderlineStyle.single.rawValue,
+                    .markedClauseSegment: 0,
+                ])
+        }
+
         var candidateCount: Int {
             candidates.count
         }

@@ -410,6 +410,8 @@ extension McBopomofoInputMethodController {
             handle(state: newState, previous: previous, client: client)
         case let newState as InputState.ChoosingCandidate:
             handle(state: newState, previous: previous, client: client)
+        case let newState as InputState.ChoosingMixedInputCandidate:
+            handle(state: newState, previous: previous, client: client)
         case let newState as InputState.AssociatedPhrases:
             handle(state: newState, previous: previous, client: client)
         case let newState as InputState.AssociatedPhrasesPlain:
@@ -583,6 +585,21 @@ extension McBopomofoInputMethodController {
 
         // the selection range is where the cursor is, with the length being 0 and replacement range NSNotFound,
         // i.e. the client app needs to take care of where to put this composing buffer
+        client.setMarkedText(
+            state.attributedString, selectionRange: NSMakeRange(Int(state.cursorIndex), 0),
+            replacementRange: NSMakeRange(NSNotFound, NSNotFound))
+        show(candidateWindowWith: state, client: client)
+    }
+
+    private func handle(
+        state: InputState.ChoosingMixedInputCandidate, previous: InputState, client: Any?
+    ) {
+        hideTooltip()
+        guard let client = client as? IMKTextInput else {
+            gCurrentCandidateController?.visible = false
+            return
+        }
+
         client.setMarkedText(
             state.attributedString, selectionRange: NSMakeRange(Int(state.cursorIndex), 0),
             replacementRange: NSMakeRange(NSNotFound, NSNotFound))
@@ -785,6 +802,9 @@ extension McBopomofoInputMethodController {
             var candidates: [InputState.Candidate] = []
             switch state {
             case let state as InputState.ChoosingCandidate:
+                useVerticalMode = state.useVerticalMode
+                candidates = state.candidates
+            case let state as InputState.ChoosingMixedInputCandidate:
                 useVerticalMode = state.useVerticalMode
                 candidates = state.candidates
             case let state as InputState.AssociatedPhrasesPlain:
