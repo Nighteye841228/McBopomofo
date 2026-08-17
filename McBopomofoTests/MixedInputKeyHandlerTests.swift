@@ -59,6 +59,18 @@ final class MixedInputKeyHandlerTests: XCTestCase {
         }
     }
 
+    @discardableResult
+    private func sendDown() -> Bool {
+        let input = KeyHandlerInput(
+            inputText: " ", keyCode: KeyCode.down.rawValue, charCode: 0, flags: [],
+            isVerticalMode: false)
+        return handler.handle(input: input, state: state) { [self] newState in
+            state = newState
+        } errorCallback: {
+            XCTFail("Opening mixed candidates should not report an input error")
+        }
+    }
+
     private var composingBuffer: String {
         (state as? InputState.Inputting)?.composingBuffer ?? ""
     }
@@ -105,5 +117,22 @@ final class MixedInputKeyHandlerTests: XCTestCase {
         sendKeys("call")
         XCTAssertTrue(send("\u{8}"))
         XCTAssertEqual(composingBuffer, "cal")
+    }
+
+    func testDownArrowShowsChineseAndEnglishAlternatives() {
+        sendKeys("a3")
+        XCTAssertTrue(sendDown())
+        guard let choosing = state as? InputState.ChoosingMixedInputCandidate else {
+            return XCTFail("Expected mixed candidate state, got \(state)")
+        }
+        XCTAssertEqual(choosing.candidates.count, 2)
+        XCTAssertTrue(choosing.candidates.contains { $0.value == "a3" })
+    }
+
+    func testSelectingEnglishAlternativeKeepsRawInput() {
+        sendKeys("a3")
+        XCTAssertTrue(sendDown())
+        state = handler.applyMixedInputCandidate(useEnglish: true)
+        XCTAssertEqual(composingBuffer, "a3")
     }
 }

@@ -30,6 +30,8 @@
 		A11F00013000000100000001 /* MixedInputSegmenter.cpp in Sources */ = {isa = PBXBuildFile; fileRef = A11F00023000000100000001 /* MixedInputSegmenter.cpp */; };
 		A11F00043000000100000001 /* MixedInputLanguageModel.cpp in Sources */ = {isa = PBXBuildFile; fileRef = A11F00053000000100000001 /* MixedInputLanguageModel.cpp */; };
 		A11F00073000000100000001 /* MixedInputKeyHandlerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A11F00083000000100000001 /* MixedInputKeyHandlerTests.swift */; };
+		A11F00093000000100000001 /* MixedInputPersonalization.swift in Sources */ = {isa = PBXBuildFile; fileRef = A11F000A3000000100000001 /* MixedInputPersonalization.swift */; };
+		A11F000B3000000100000001 /* MixedInputPersonalizationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A11F000C3000000100000001 /* MixedInputPersonalizationTests.swift */; };
 		6ACA41FA15FC1D9000935EF6 /* InfoPlist.strings in Resources */ = {isa = PBXBuildFile; fileRef = 6ACA41EA15FC1D9000935EF6 /* InfoPlist.strings */; };
 		6ACA41FB15FC1D9000935EF6 /* License.rtf in Resources */ = {isa = PBXBuildFile; fileRef = 6ACA41EC15FC1D9000935EF6 /* License.rtf */; };
 		6ACA41FC15FC1D9000935EF6 /* Localizable.strings in Resources */ = {isa = PBXBuildFile; fileRef = 6ACA41EE15FC1D9000935EF6 /* Localizable.strings */; };
@@ -206,6 +208,8 @@
 		A11F00053000000100000001 /* MixedInputLanguageModel.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; path = MixedInputLanguageModel.cpp; sourceTree = "<group>"; };
 		A11F00063000000100000001 /* MixedInputLanguageModel.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = MixedInputLanguageModel.h; sourceTree = "<group>"; };
 		A11F00083000000100000001 /* MixedInputKeyHandlerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MixedInputKeyHandlerTests.swift; sourceTree = "<group>"; };
+		A11F000A3000000100000001 /* MixedInputPersonalization.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MixedInputPersonalization.swift; sourceTree = "<group>"; };
+		A11F000C3000000100000001 /* MixedInputPersonalizationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MixedInputPersonalizationTests.swift; sourceTree = "<group>"; };
 		D41B626A2B86EAD400583148 /* BopomofoBraille */ = {isa = PBXFileReference; lastKnownFileType = wrapper; name = BopomofoBraille; path = Packages/BopomofoBraille; sourceTree = "<group>"; };
 		D41B626D2B87B5C100583148 /* ServiceProviderInputHelper.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = ServiceProviderInputHelper.h; sourceTree = "<group>"; };
 		D41B626E2B87B5C100583148 /* ServiceProviderInputHelper.mm */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.objcpp; path = ServiceProviderInputHelper.mm; sourceTree = "<group>"; };
@@ -350,6 +354,7 @@
 				D4314F0C2ED369090071DD71 /* NumberInputHelper.swift */,
 				D427F76B278CA1BA004A2160 /* AppDelegate.swift */,
 				D44FB74427915555003C80A6 /* Preferences.swift */,
+				A11F000A3000000100000001 /* MixedInputPersonalization.swift */,
 				D47F7DCF278C0897002F9DD7 /* NonModalAlertWindowController.swift */,
 				D41B626D2B87B5C100583148 /* ServiceProviderInputHelper.h */,
 				D41B626E2B87B5C100583148 /* ServiceProviderInputHelper.mm */,
@@ -530,6 +535,7 @@
 				D436E23E2CD20B9E00C6155D /* AssociatedPhrasesTests.swift */,
 				D47D73A327A5D43900255A50 /* KeyHandlerBopomofoTests.swift */,
 				A11F00083000000100000001 /* MixedInputKeyHandlerTests.swift */,
+				A11F000C3000000100000001 /* MixedInputPersonalizationTests.swift */,
 				D4A8E43527A9E982002F7A07 /* KeyHandlerPlainBopomofoTests.swift */,
 				D485D3B82796A8A000657FF3 /* PreferencesTests.swift */,
 				D485D3BF2796CE3200657FF3 /* VersionUpdateTests.swift */,
@@ -754,6 +760,7 @@
 				D44FB74D2792189A003C80A6 /* PhraseReplacementMap.cpp in Sources */,
 				D4A13D5A27A59F0B003BE359 /* InputMethodController.swift in Sources */,
 				D44FB74527915565003C80A6 /* Preferences.swift in Sources */,
+				A11F00093000000100000001 /* MixedInputPersonalization.swift in Sources */,
 				6A660A702EAF371000D53D7B /* ByteBlockBackedDictionary.cpp in Sources */,
 				6A833E522F0A0FB30086AD0C /* VariantAnnotator.cpp in Sources */,
 				D4314F0D2ED3690F0071DD71 /* NumberInputHelper.swift in Sources */,
@@ -802,6 +809,7 @@
 				D4C2A9872B4309D700113711 /* UTF8HelperTest.mm in Sources */,
 				D47D73A427A5D43900255A50 /* KeyHandlerBopomofoTests.swift in Sources */,
 				A11F00073000000100000001 /* MixedInputKeyHandlerTests.swift in Sources */,
+				A11F000B3000000100000001 /* MixedInputPersonalizationTests.swift in Sources */,
 				D485D3B92796A8A000657FF3 /* PreferencesTests.swift in Sources */,
 				D449AD612B39506D000C5812 /* ServiceProviderTests.swift in Sources */,
 				D485D3C02796CE3200657FF3 /* VersionUpdateTests.swift in Sources */,

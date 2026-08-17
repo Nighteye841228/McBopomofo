@@ -52,6 +52,12 @@
 InputMode InputModeBopomofo = @"org.openvanilla.inputmethod.McBopomofo.Bopomofo";
 InputMode InputModePlainBopomofo = @"org.openvanilla.inputmethod.McBopomofo.PlainBopomofo";
 
+enum class MixedInputInterpretation {
+    kAutomatic,
+    kChinese,
+    kEnglish,
+};
+
 @implementation KeyHandler {
     std::shared_ptr<Formosa::Gramambular2::LanguageModel> _emptySharedPtr;
 
@@ -372,6 +378,19 @@ InputMode InputModePlainBopomofo = @"org.openvanilla.inputmethod.McBopomofo.Plai
 
     McBopomofo::MixedInputSegmenter::Result result =
         _mixedInputSegmenter->segment(_mixedInputPending);
+    BOOL hasChinese = NO;
+    for (const auto& segment : result.segments) {
+        if (segment.kind == McBopomofo::MixedInputSegmenter::SegmentKind::kChinese) {
+            hasChinese = YES;
+            break;
+        }
+    }
+    if (hasChinese &&
+        [MixedInputPersonalization preferenceForRawInput:@(_mixedInputPending.c_str())
+                                                boundary:@"candidate"] == MixedInputPreferenceEnglish) {
+        return @(_mixedInputPending.c_str());
+    }
+
     std::string preview;
     for (const auto& segment : result.segments) {
         if (segment.kind == McBopomofo::MixedInputSegmenter::SegmentKind::kLiteral) {
@@ -391,6 +410,7 @@ InputMode InputModePlainBopomofo = @"org.openvanilla.inputmethod.McBopomofo.Plai
 
 - (void)_flushMixedInputWithBoundary:(McBopomofo::MixedInputSegmenter::Boundary)boundary
                          appendSpace:(BOOL)appendSpace
+                      interpretation:(MixedInputInterpretation)interpretation
 {
     if (_mixedInputPending.empty()) {
         return;
@@ -399,20 +419,34 @@ InputMode InputModePlainBopomofo = @"org.openvanilla.inputmethod.McBopomofo.Plai
     std::string raw = _mixedInputPending;
     McBopomofo::MixedInputSegmenter::Result result =
         _mixedInputSegmenter->segment(raw, boundary);
-    for (const auto& segment : result.segments) {
-        if (segment.kind == McBopomofo::MixedInputSegmenter::SegmentKind::kChinese) {
-            _grid->insertReading(segment.reading);
-            continue;
-        }
+    bool useEnglish = interpretation == MixedInputInterpretation::kEnglish;
+    if (interpretation == MixedInputInterpretation::kAutomatic) {
+        useEnglish =
+            [MixedInputPersonalization preferenceForRawInput:@(raw.c_str())
+                                                    boundary:@"candidate"] == MixedInputPreferenceEnglish;
+    }
 
-        for (char value : segment.raw) {
+    if (useEnglish) {
+        for (char value : raw) {
             std::string literal = _mixedLanguageModel->registerLiteral(std::string(1, value));
             _grid->insertReading(literal);
+        }
+    } else {
+        for (const auto& segment : result.segments) {
+            if (segment.kind == McBopomofo::MixedInputSegmenter::SegmentKind::kChinese) {
+                _grid->insertReading(segment.reading);
+                continue;
+            }
+
+            for (char value : segment.raw) {
+                std::string literal = _mixedLanguageModel->registerLiteral(std::string(1, value));
+                _grid->insertReading(literal);
+            }
         }
     }
 
     bool spaceCompletedFirstTone = false;
-    if (boundary == McBopomofo::MixedInputSegmenter::Boundary::kSpace &&
+    if (!useEnglish && boundary == McBopomofo::MixedInputSegmenter::Boundary::kSpace &&
         !result.segments.empty()) {
         const auto& last = result.segments.back();
         size_t lastTone = raw.find_last_of("3467");
@@ -429,6 +463,22 @@ InputMode InputModePlainBopomofo = @"org.openvanilla.inputmethod.McBopomofo.Plai
 
     _mixedInputPending.clear();
     [self _walk];
+}
+
+- (InputState *)applyMixedInputCandidateUsingEnglish:(BOOL)useEnglish
+{
+    if (_mixedInputPending.empty()) {
+        return [self buildInputtingState];
+    }
+
+    NSString *rawInput = @(_mixedInputPending.c_str());
+    [MixedInputPersonalization observeRawInput:rawInput
+                                      boundary:@"candidate"
+                               selectedEnglish:useEnglish];
+    [self _flushMixedInputWithBoundary:McBopomofo::MixedInputSegmenter::Boundary::kEnter
+                           appendSpace:NO
+                        interpretation:useEnglish ? MixedInputInterpretation::kEnglish : MixedInputInterpretation::kChinese];
+    return [self buildInputtingState];
 }
 
 - (BOOL)_handleMixedInput:(KeyHandlerInput *)input
@@ -469,8 +519,37 @@ InputMode InputModePlainBopomofo = @"org.openvanilla.inputmethod.McBopomofo.Plai
 
     if (charCode == 13 && !_mixedInputPending.empty()) {
         [self _flushMixedInputWithBoundary:McBopomofo::MixedInputSegmenter::Boundary::kEnter
-                              appendSpace:NO];
+                              appendSpace:NO
+                           interpretation:MixedInputInterpretation::kAutomatic];
         return NO;
+    }
+
+    if (input.isDown && !_mixedInputPending.empty()) {
+        McBopomofo::MixedInputSegmenter::Result result =
+            _mixedInputSegmenter->segment(_mixedInputPending);
+        BOOL hasChinese = NO;
+        std::string chineseText;
+        for (const auto& segment : result.segments) {
+            if (segment.kind == McBopomofo::MixedInputSegmenter::SegmentKind::kLiteral) {
+                chineseText += segment.raw;
+                continue;
+            }
+            hasChinese = YES;
+            auto unigrams = _languageModel->getUnigrams(segment.reading);
+            chineseText += unigrams.empty() ? segment.raw : unigrams.front().value();
+        }
+        if (hasChinese) {
+            InputStateInputting *inputting = (InputStateInputting *)[self buildInputtingState];
+            InputStateChoosingMixedInputCandidate *choosing =
+                [[InputStateChoosingMixedInputCandidate alloc]
+                    initWithComposingBuffer:inputting.composingBuffer
+                              cursorIndex:inputting.cursorIndex
+                                 rawInput:@(_mixedInputPending.c_str())
+                              chineseText:@(chineseText.c_str())
+                          useVerticalMode:input.useVerticalMode];
+            stateCallback(choosing);
+            return YES;
+        }
     }
 
     BOOL isNavigationKey = input.isCursorForward || input.isCursorBackward ||
@@ -478,7 +557,8 @@ InputMode InputModePlainBopomofo = @"org.openvanilla.inputmethod.McBopomofo.Plai
         input.isAbsorbedArrowKey || input.isTab;
     if (isNavigationKey && !_mixedInputPending.empty()) {
         [self _flushMixedInputWithBoundary:McBopomofo::MixedInputSegmenter::Boundary::kEnter
-                              appendSpace:NO];
+                              appendSpace:NO
+                           interpretation:MixedInputInterpretation::kAutomatic];
         stateCallback([self buildInputtingState]);
         return NO;
     }
@@ -489,7 +569,8 @@ InputMode InputModePlainBopomofo = @"org.openvanilla.inputmethod.McBopomofo.Plai
 
     if (charCode == 32 && !_mixedInputPending.empty()) {
         [self _flushMixedInputWithBoundary:McBopomofo::MixedInputSegmenter::Boundary::kSpace
-                              appendSpace:YES];
+                              appendSpace:YES
+                           interpretation:MixedInputInterpretation::kAutomatic];
         stateCallback([self buildInputtingState]);
         return YES;
     }
@@ -515,12 +596,14 @@ InputMode InputModePlainBopomofo = @"org.openvanilla.inputmethod.McBopomofo.Plai
     if ((input.isShiftHold || input.isCapsLockOn) && isLetter &&
         !_mixedInputPending.empty()) {
         [self _flushMixedInputWithBoundary:McBopomofo::MixedInputSegmenter::Boundary::kEnter
-                              appendSpace:NO];
+                              appendSpace:NO
+                           interpretation:MixedInputInterpretation::kAutomatic];
     }
 
     if (_mixedInputPending.size() >= 64) {
         [self _flushMixedInputWithBoundary:McBopomofo::MixedInputSegmenter::Boundary::kEnter
-                              appendSpace:NO];
+                              appendSpace:NO
+                           interpretation:MixedInputInterpretation::kAutomatic];
     }
 
     char value = (char)charCode;
@@ -651,6 +734,9 @@ InputMode InputModePlainBopomofo = @"org.openvanilla.inputmethod.McBopomofo.Plai
     }
 
     // MARK: Handle Candidates
+    if ([state isKindOfClass:[InputStateChoosingMixedInputCandidate class]]) {
+        return [self _handleCandidateState:state input:input stateCallback:stateCallback errorCallback:errorCallback];
+    }
     if ([state isKindOfClass:[InputStateChoosingCandidate class]]) {
         return [self _handleCandidateState:state input:input stateCallback:stateCallback errorCallback:errorCallback];
     }

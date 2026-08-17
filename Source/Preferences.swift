@@ -228,6 +228,8 @@ class Preferences: NSObject {
             kKeepReadingUponCompositionError,
             kMixedInputEnabledKey,
             kMixedInputPersonalizationEnabledKey,
+            MixedInputPersonalization.dataKey,
+            MixedInputPersonalization.saltKey,
             kCandidateTextFontName,
             kCandidateKeyLabelFontName,
             kCandidateKeys,

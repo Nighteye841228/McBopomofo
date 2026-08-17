@@ -578,6 +578,60 @@ class InputState: NSObject {
         }
     }
 
+    /// Presents the current token's automatic Chinese interpretation and its
+    /// original ASCII form. Only an explicit selection is learned.
+    @objc(InputStateChoosingMixedInputCandidate)
+    class ChoosingMixedInputCandidate: NotEmpty, CandidateProvider {
+        @objc private(set) var candidates: [Candidate]
+        @objc private(set) var rawInput: String
+        @objc private(set) var englishCandidateIndex: Int
+        @objc private(set) var useVerticalMode: Bool
+
+        @objc init(
+            composingBuffer: String, cursorIndex: UInt, rawInput: String, chineseText: String,
+            useVerticalMode: Bool
+        ) {
+            self.rawInput = rawInput
+            self.useVerticalMode = useVerticalMode
+            let chinese = Candidate(
+                reading: "", value: chineseText,
+                displayText: String(
+                    format: NSLocalizedString("Chinese: %@", comment: ""), chineseText),
+                rawValue: chineseText)
+            let english = Candidate(
+                reading: "", value: rawInput,
+                displayText: String(
+                    format: NSLocalizedString("English: %@", comment: ""), rawInput),
+                rawValue: rawInput)
+            if MixedInputPersonalization.preference(
+                forRawInput: rawInput, boundary: "candidate") == .english
+            {
+                candidates = [english, chinese]
+                englishCandidateIndex = 0
+            } else {
+                candidates = [chinese, english]
+                englishCandidateIndex = 1
+            }
+            super.init(composingBuffer: composingBuffer, cursorIndex: cursorIndex)
+        }
+
+        var candidateCount: Int {
+            candidates.count
+        }
+
+        func candidate(at index: Int) -> String {
+            candidates[index].displayText
+        }
+
+        func reading(at index: Int) -> String? {
+            nil
+        }
+
+        override var description: String {
+            "<InputState.ChoosingMixedInputCandidate, rawInput:\(rawInput), candidates:\(candidates)>"
+        }
+    }
+
     ///  Subclass of ChoosingCandidate specially for choosing punctuations in
     ///  the punctuation input mode.
     @objc(InputChoosingPunctuationList)

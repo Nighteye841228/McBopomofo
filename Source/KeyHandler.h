@@ -78,6 +78,9 @@ extern InputMode InputModePlainBopomofo;
                          associatedPhraseValue:(NSString *)phraseValue;
 - (void)clear;
 
+- (InputState *)applyMixedInputCandidateUsingEnglish:(BOOL)useEnglish
+    NS_SWIFT_NAME(applyMixedInputCandidate(useEnglish:));
+
 - (void)handleForceCommitWithStateCallback:(void (^)(InputState *))stateCallback
     NS_SWIFT_NAME(handleForceCommit(stateCallback:));
 
