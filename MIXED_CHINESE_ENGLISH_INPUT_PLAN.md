@@ -1,7 +1,7 @@
 # 中英文自動混合輸入功能規格
 
-- 文件狀態：第一版規格已定案，階段 0 與階段 1 已開始實作
-- 最後更新：2026-08-18T03:53:27+08:00
+- 文件狀態：第一版規格已定案，階段 0、1 與 2 已實作
+- 最後更新：2026-08-18T04:02:58+08:00
 - 第一版範圍：McBopomofo 主輸入模式、標準注音鍵盤、一般注音與可列印 ASCII
 - 建議實作語言：C++，直接整合既有 `BopomofoReadingBuffer`、`McBopomofoLM` 與 `ReadingGrid`
 
@@ -29,14 +29,16 @@
 | literal language model | 已實作 | 每個 ASCII 字元使用 session-scoped opaque reading。 |
 | `KeyHandler` 基本路由與 `MixedInputting` | 已實作，待完整 Xcode 驗證 | 功能開關預設關閉，只套用主模式與 Standard layout。 |
 | 設定 UI 與三語在地化 | 已實作 | 主功能與個人化各有開關，皆預設關閉。 |
-| 混合替代候選 | 尚未實作 | 階段 2。 |
-| 30 天個人化模型 | 尚未實作 | 階段 2；目前開關只保留設定值，不影響判定。 |
+| 混合替代候選 | 已實作，待 IMKit 實機驗證 | pending 含中文解讀時，向下鍵顯示中文與原始 ASCII；空白不選字。 |
+| 30 天個人化模型 | 已實作 | 本機加鹽 SHA-256 簽章、UTC 日桶與 Beta-Bernoulli；至少 3 次明確選擇才影響歧義結果。 |
 | macOS 10.15 | 專案設定已完成，待 runtime 驗證 | Xcode deployment target 已設為 10.15。 |
+| 命令列驗收程式 | 已編譯 | Apple Silicon Mach-O，內含本次分段器與語言模型，可在無 Xcode 時驗收核心輸出。 |
 
 ## 規格修訂紀錄
 
 - `R1`（2026-08-18T03:53:27+08:00）：KeyHandler 第一版使用 shadow raw token 產生預覽，遇到硬邊界才將中文 reading 與 literal 寫入 grid。這與「先插入 provisional node、必要時回復」具有相同外顯結果，但在 `a3@example.com` 回溯案例中不必刪除已建立的 grid node，降低游標與候選狀態失配風險。
 - `R2`（2026-08-18T03:53:27+08:00）：連續數字必須達三碼才單獨構成 protected ASCII 證據。兩碼數字可能是合法注音 component 加聲調，例如 `vu04`，不可直接把整段判成 ASCII；`sha256` 仍會受保護。
+- `R3`（2026-08-18T04:02:58+08:00）：個人化儲存改由 Swift／Foundation 實作，透過 Objective-C runtime 供 `KeyHandler.mm` 呼叫。分類演算法仍留在 C++，儲存則直接使用專案現有的 `Preferences` 與 `UserDefaults`，不需要新增 C ABI 或第三方相依。
 
 ## 已確認的產品決策
 
@@ -384,6 +386,45 @@ coordinator 必須替目前尚未遇到硬邊界的 token 保存 raw provenance�
 4. macOS 10.15 deployment target 的編譯檢查是合併必要條件；10.15 實機或 VM smoke test 是正式發布前條件。若目前無測試環境，必須在發布檢查表標記為未驗證，不可宣稱已完成 runtime 相容性驗證。
 
 第一版目前沒有會阻擋實作的產品決策。若實作發現既有 IMKit 行為與本規格衝突，以「不遺失輸入、功能關閉時零行為變更、空白不選字」為優先，並在同一份文件新增帶編號的規格修訂紀錄。
+
+## 第二階段實作與驗收紀錄
+
+第二階段已完成以下項目：
+
+- `InputState.ChoosingMixedInputCandidate` 使用現有候選視窗顯示中文與原始 ASCII，由向下鍵開啟。
+- 選定中文或英文後，`KeyHandler` 產生新的 input state；只有這種明確人工選擇會成為個人化觀察。
+- `MixedInputPersonalization` 使用 30 個 UTC 日桶、`Beta(1, 1)` 先驗與本機加鹽 SHA-256 簽章；不儲存 raw token。
+- 個人化至少需要 3 次觀察；後驗平均達 `0.8` 偏向英文，低於或等於 `0.2` 偏向中文。
+- 已加入過期、關閉時不讀寫、儲存不含 raw token、時鐘倒退與資料損壞測試。
+
+目前建置環境只有 Command Line Tools，沒有完整 Xcode，而且 Swift compiler 與 macOS SDK 的 patch 版本不一致。因此本機可完成 C++ 編譯、C++ 測試、Swift parser 檢查與 Xcode project plist 檢查，但不能誠實地宣稱已完成 Objective-C++／Swift link 或 IMKit 實機驗證。正式 `McBopomofoInstaller` 仍須在 Xcode 15.3 或更新版本執行 build 與安裝測試。
+
+### 命令列驗收程式
+
+可在專案根目錄直接執行：
+
+```bash
+./Artifacts/MixedInputDemo/MixedInputDemo
+```
+
+每行輸入標準注音實體鍵序列，Enter 進行分段，空行結束。一聲需在該行末尾加一個空白。例如：
+
+```text
+> ji3vu04y94callsu3
+Automatic: 我現在call你
+Chinese interpretation: 我現在call你
+English interpretation: ji3vu04y94callsu3
+```
+
+這個產物是 Apple Silicon Mach-O 命令列程式，用來驗收分段器與中文語言模型的結果；它不會安裝成 macOS 輸入法，也無法在命令列模擬 IMKit 候選視窗與 30 天個人化 UI。
+
+### 本次驗證結果
+
+- CMake 核心測試共 137 項：135 項通過、0 項失敗、2 項依專案原設定跳過。
+- 混合輸入 C++ 測試 13 項全數通過，包含核心範例、email 回溯、URL／程式 token、一聲空白與決定性。
+- 命令列產物已實際驗證 `ji3vu04y94callsu3`、`callsu3`、`a3@example.com`、`sha256`、`version4`、`qzxm`、`su3cl3` 與一聲空白。
+- 本次異動的 Swift 檔案已通過 compiler parser；Xcode project 與三語 strings 已通過 `plutil -lint`。
+- Swift／Objective-C++ 完整編譯、Swift 測試與 IMKit 操作驗收尚待安裝完整 Xcode 後執行。
 
 ## 其他未提及事項
 
