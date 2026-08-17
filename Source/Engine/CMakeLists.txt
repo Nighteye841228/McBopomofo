@@ -154,3 +154,12 @@ if (ENABLE_ENGINE_PROFILE)
                 MandarinLib
                 gramambular2_lib)
 endif ()
+
+if (ENABLE_MIXED_INPUT_DEMO)
+        add_executable(MixedInputDemo ../Tools/MixedInputDemo.cpp)
+        target_include_directories(MixedInputDemo PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+        target_link_libraries(MixedInputDemo
+                McBopomofoLMLib
+                MandarinLib
+                gramambular2_lib)
+endif ()

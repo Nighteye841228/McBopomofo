@@ -5,6 +5,7 @@ project(McBopomofoCore VERSION 3.0)
 
 option(ENABLE_TEST "Build Test" On)
 option(ENABLE_ENGINE_PROFILE "Build the engine profiling workload" Off)
+option(ENABLE_MIXED_INPUT_DEMO "Build the mixed input command-line demo" Off)
 
 if (CMAKE_VERSION VERSION_GREATER_EQUAL "3.23.0")
     find_package(GTest)
