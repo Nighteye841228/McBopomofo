@@ -440,6 +440,19 @@ private struct BasicPreferencesView: View {
                     isOn: $preferences.chooseCandidateUsingSpace)
             }
 
+            PreferenceRow {
+                Toggle(
+                    localized("Automatically detect Chinese and English input"),
+                    isOn: $preferences.mixedInputEnabled)
+            }
+
+            PreferenceRow {
+                Toggle(
+                    localized("Enable mixed input personalization"),
+                    isOn: $preferences.mixedInputPersonalizationEnabled)
+                    .disabled(!preferences.mixedInputEnabled)
+            }
+
             PreferenceRow(localized("Show Candidate Phrase:")) {
                 Picker("", selection: $preferences.selectPhraseAfterCursorAsCandidate) {
                     Text(localized("Before the cursor (like Hanin)")).tag(false)

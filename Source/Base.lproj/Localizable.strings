@@ -200,6 +200,8 @@
 "Hanyu Pinyin" = "Hanyu Pinyin";
 "IBM" = "IBM";
 "Space key chooses candidate" = "Space key chooses candidate";
+"Automatically detect Chinese and English input" = "Automatically detect Chinese and English input";
+"Enable mixed input personalization" = "Enable mixed input personalization";
 "ESC key clears entire input buffer" = "ESC key clears entire input buffer";
 "Show Candidate Phrase:" = "Show Candidate Phrase:";
 "Before the cursor (like Hanin)" = "Before the cursor (like Hanin)";

@@ -202,6 +202,8 @@
 "Hanyu Pinyin" = "漢語拼音";
 "IBM" = "IBM";
 "Space key chooses candidate" = "使用空白鍵選字";
+"Automatically detect Chinese and English input" = "自動判斷中文與英文輸入";
+"Enable mixed input personalization" = "啟用混合輸入個人化學習";
 "ESC key clears entire input buffer" = "按下 ESC 會清除整個輸入緩衝區";
 "Show Candidate Phrase:" = "選字時，候選詞起點在：";
 "Before the cursor (like Hanin)" = "游標前面（像漢音輸入法）";

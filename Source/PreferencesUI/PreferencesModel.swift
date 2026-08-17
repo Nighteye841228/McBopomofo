@@ -89,6 +89,22 @@ final class PreferencesViewModel: NSObject, ObservableObject {
         }
     }
 
+    var mixedInputEnabled: Bool {
+        get { Preferences.mixedInputEnabled }
+        set {
+            objectWillChange.send()
+            Preferences.mixedInputEnabled = newValue
+        }
+    }
+
+    var mixedInputPersonalizationEnabled: Bool {
+        get { Preferences.mixedInputPersonalizationEnabled }
+        set {
+            objectWillChange.send()
+            Preferences.mixedInputPersonalizationEnabled = newValue
+        }
+    }
+
     var selectPhraseAfterCursorAsCandidate: Bool {
         get { Preferences.selectPhraseAfterCursorAsCandidate }
         set {

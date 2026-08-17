@@ -140,6 +140,17 @@ final class PreferencesTests {
         #expect(Preferences.chooseCandidateUsingSpace == false)
     }
 
+    @Test("Test mixed input settings")
+    func testMixedInputSettings() {
+        #expect(Preferences.mixedInputEnabled == false)
+        #expect(Preferences.mixedInputPersonalizationEnabled == false)
+
+        Preferences.mixedInputEnabled = true
+        Preferences.mixedInputPersonalizationEnabled = true
+        #expect(Preferences.mixedInputEnabled == true)
+        #expect(Preferences.mixedInputPersonalizationEnabled == true)
+    }
+
     @Test("Test Chinese conversion toggle")
     func testChineseConversionEnabled() {
         #expect(Preferences.chineseConversionEnabled == false)
