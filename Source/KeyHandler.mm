@@ -26,11 +26,15 @@
 #import "Mandarin.h"
 #import "McBopomofo-Swift.h"
 #import "McBopomofoLM.h"
+#import "MixedInputLanguageModel.h"
+#import "MixedInputSegmenter.h"
 #import "UTF8Helper.h"
 #import "UserOverrideModel.h"
 #import "reading_grid.h"
 
 #import <algorithm>
+#import <cctype>
+#import <memory>
 #import <optional>
 #import <sstream>
 #import <string>
@@ -56,6 +60,9 @@ InputMode InputModePlainBopomofo = @"org.openvanilla.inputmethod.McBopomofo.Plai
 
     // language model
     McBopomofo::McBopomofoLM *_languageModel;
+    std::unique_ptr<McBopomofo::MixedInputLanguageModel> _mixedLanguageModel;
+    std::unique_ptr<McBopomofo::MixedInputSegmenter> _mixedInputSegmenter;
+    std::string _mixedInputPending;
 
     // user override model
     McBopomofo::UserOverrideModel *_userOverrideModel;
@@ -100,11 +107,18 @@ InputMode InputModePlainBopomofo = @"org.openvanilla.inputmethod.McBopomofo.Plai
 
         if (_grid != nullptr) {
             delete _grid;
+            _mixedLanguageModel = std::make_unique<McBopomofo::MixedInputLanguageModel>(_languageModel);
+            _mixedInputSegmenter = std::make_unique<McBopomofo::MixedInputSegmenter>(
+                [languageModel = _languageModel](const std::string& reading) {
+                    return languageModel->hasUnigrams(reading);
+                });
             // This returns a shared_ptr that in turn points to an unmanaged object.
-            std::shared_ptr<Formosa::Gramambular2::LanguageModel> lm(_emptySharedPtr, _languageModel);
+            std::shared_ptr<Formosa::Gramambular2::LanguageModel> lm(_emptySharedPtr, _mixedLanguageModel.get());
             _grid = new Formosa::Gramambular2::ReadingGrid(lm);
             _grid->setReadingSeparator("-");
         }
+
+        _mixedInputPending.clear();
 
         if (!_bpmfReadingBuffer->isEmpty()) {
             _bpmfReadingBuffer->clear();
@@ -129,8 +143,14 @@ InputMode InputModePlainBopomofo = @"org.openvanilla.inputmethod.McBopomofo.Plai
         _languageModel->setPhraseReplacementEnabled(Preferences.phraseReplacementEnabled);
         _userOverrideModel = [LanguageModelManager userOverrideModel];
 
+        _mixedLanguageModel = std::make_unique<McBopomofo::MixedInputLanguageModel>(_languageModel);
+        _mixedInputSegmenter = std::make_unique<McBopomofo::MixedInputSegmenter>(
+            [languageModel = _languageModel](const std::string& reading) {
+                return languageModel->hasUnigrams(reading);
+            });
+
         // This returns a shared_ptr that in turn points to an unmanaged object.
-        std::shared_ptr<Formosa::Gramambular2::LanguageModel> lm(_emptySharedPtr, _languageModel);
+        std::shared_ptr<Formosa::Gramambular2::LanguageModel> lm(_emptySharedPtr, _mixedLanguageModel.get());
         _grid = new Formosa::Gramambular2::ReadingGrid(lm);
         _grid->setReadingSeparator("-");
 
@@ -298,13 +318,15 @@ InputMode InputModePlainBopomofo = @"org.openvanilla.inputmethod.McBopomofo.Plai
 - (void)clear
 {
     _bpmfReadingBuffer->clear();
+    _mixedInputPending.clear();
     _grid->clear();
+    _mixedLanguageModel->clearLiterals();
     _latestWalk = Formosa::Gramambular2::ReadingGrid::WalkResult {};
 }
 
 - (void)handleForceCommitWithStateCallback:(void (^)(InputState *))stateCallback
 {
-    if (_bpmfReadingBuffer->isEmpty() && _grid->length() == 0) {
+    if (_bpmfReadingBuffer->isEmpty() && _mixedInputPending.empty() && _grid->length() == 0) {
         // No-op if both are empty.
         return;
     }
@@ -323,6 +345,191 @@ InputMode InputModePlainBopomofo = @"org.openvanilla.inputmethod.McBopomofo.Plai
     NSString *keyboardLayoutName = Preferences.keyboardLayoutName;
     std::string layout = std::string(keyboardLayoutName.UTF8String) + "_";
     return layout;
+}
+
+- (BOOL)_mixedInputIsEnabled
+{
+    return Preferences.mixedInputEnabled &&
+        [_inputMode isEqualToString:InputModeBopomofo] &&
+        Preferences.keyboardLayout == KeyboardLayoutStandard;
+}
+
+- (BOOL)_gridContainsMixedLiteral
+{
+    for (const auto& reading : _grid->readings()) {
+        if (_mixedLanguageModel->isLiteralReading(reading)) {
+            return YES;
+        }
+    }
+    return NO;
+}
+
+- (NSString *)_mixedInputPreview
+{
+    if (_mixedInputPending.empty()) {
+        return @"";
+    }
+
+    McBopomofo::MixedInputSegmenter::Result result =
+        _mixedInputSegmenter->segment(_mixedInputPending);
+    std::string preview;
+    for (const auto& segment : result.segments) {
+        if (segment.kind == McBopomofo::MixedInputSegmenter::SegmentKind::kLiteral) {
+            preview += segment.raw;
+            continue;
+        }
+
+        auto unigrams = _languageModel->getUnigrams(segment.reading);
+        if (unigrams.empty()) {
+            preview += segment.raw;
+        } else {
+            preview += unigrams.front().value();
+        }
+    }
+    return @(preview.c_str());
+}
+
+- (void)_flushMixedInputWithBoundary:(McBopomofo::MixedInputSegmenter::Boundary)boundary
+                         appendSpace:(BOOL)appendSpace
+{
+    if (_mixedInputPending.empty()) {
+        return;
+    }
+
+    std::string raw = _mixedInputPending;
+    McBopomofo::MixedInputSegmenter::Result result =
+        _mixedInputSegmenter->segment(raw, boundary);
+    for (const auto& segment : result.segments) {
+        if (segment.kind == McBopomofo::MixedInputSegmenter::SegmentKind::kChinese) {
+            _grid->insertReading(segment.reading);
+            continue;
+        }
+
+        for (char value : segment.raw) {
+            std::string literal = _mixedLanguageModel->registerLiteral(std::string(1, value));
+            _grid->insertReading(literal);
+        }
+    }
+
+    bool spaceCompletedFirstTone = false;
+    if (boundary == McBopomofo::MixedInputSegmenter::Boundary::kSpace &&
+        !result.segments.empty()) {
+        const auto& last = result.segments.back();
+        size_t lastTone = raw.find_last_of("3467");
+        size_t tailStart = lastTone == std::string::npos ? 0 : lastTone + 1;
+        spaceCompletedFirstTone =
+            last.kind == McBopomofo::MixedInputSegmenter::SegmentKind::kChinese &&
+            last.raw == raw.substr(tailStart);
+    }
+
+    if (appendSpace && !spaceCompletedFirstTone) {
+        std::string literal = _mixedLanguageModel->registerLiteral(" ");
+        _grid->insertReading(literal);
+    }
+
+    _mixedInputPending.clear();
+    [self _walk];
+}
+
+- (BOOL)_handleMixedInput:(KeyHandlerInput *)input
+                    state:(InputState *)state
+            stateCallback:(void (^)(InputState *))stateCallback
+{
+    if (![self _mixedInputIsEnabled]) {
+        return NO;
+    }
+    if (![state isKindOfClass:[InputStateEmpty class]] &&
+        ![state isKindOfClass:[InputStateInputting class]]) {
+        return NO;
+    }
+
+    UniChar charCode = input.charCode;
+    if (charCode == 27 && !_mixedInputPending.empty()) {
+        _mixedInputPending.clear();
+        if (Preferences.escToCleanInputBuffer) {
+            [self clear];
+        }
+        if (_grid->length() == 0) {
+            stateCallback([[InputStateEmptyIgnoringPreviousState alloc] init]);
+        } else {
+            stateCallback([self buildInputtingState]);
+        }
+        return YES;
+    }
+
+    if (charCode == 8 && !_mixedInputPending.empty()) {
+        _mixedInputPending.pop_back();
+        if (_mixedInputPending.empty() && _grid->length() == 0) {
+            stateCallback([[InputStateEmptyIgnoringPreviousState alloc] init]);
+        } else {
+            stateCallback([self buildInputtingState]);
+        }
+        return YES;
+    }
+
+    if (charCode == 13 && !_mixedInputPending.empty()) {
+        [self _flushMixedInputWithBoundary:McBopomofo::MixedInputSegmenter::Boundary::kEnter
+                              appendSpace:NO];
+        return NO;
+    }
+
+    BOOL isNavigationKey = input.isCursorForward || input.isCursorBackward ||
+        input.isHome || input.isEnd || input.isDelete || input.isExtraChooseCandidateKey ||
+        input.isAbsorbedArrowKey || input.isTab;
+    if (isNavigationKey && !_mixedInputPending.empty()) {
+        [self _flushMixedInputWithBoundary:McBopomofo::MixedInputSegmenter::Boundary::kEnter
+                              appendSpace:NO];
+        stateCallback([self buildInputtingState]);
+        return NO;
+    }
+
+    if (input.isCommandHold || input.isOptionHold || input.isControlHold || input.isNumericPad) {
+        return NO;
+    }
+
+    if (charCode == 32 && !_mixedInputPending.empty()) {
+        [self _flushMixedInputWithBoundary:McBopomofo::MixedInputSegmenter::Boundary::kSpace
+                              appendSpace:YES];
+        stateCallback([self buildInputtingState]);
+        return YES;
+    }
+    if (charCode == 32 && [state isKindOfClass:[InputStateInputting class]]) {
+        std::string literal = _mixedLanguageModel->registerLiteral(" ");
+        _grid->insertReading(literal);
+        [self _walk];
+        stateCallback([self buildInputtingState]);
+        return YES;
+    }
+
+    if (charCode >= 0x80 || !McBopomofo::MixedInputSegmenter::IsSupportedAscii((char)charCode)) {
+        return NO;
+    }
+
+    bool isLetter = std::isalpha(static_cast<unsigned char>(charCode));
+    bool startsOrContinuesToken = !_mixedInputPending.empty() || input.isCapsLockOn ||
+        isLetter || std::isdigit(static_cast<unsigned char>(charCode));
+    if (!startsOrContinuesToken) {
+        return NO;
+    }
+
+    if ((input.isShiftHold || input.isCapsLockOn) && isLetter &&
+        !_mixedInputPending.empty()) {
+        [self _flushMixedInputWithBoundary:McBopomofo::MixedInputSegmenter::Boundary::kEnter
+                              appendSpace:NO];
+    }
+
+    if (_mixedInputPending.size() >= 64) {
+        [self _flushMixedInputWithBoundary:McBopomofo::MixedInputSegmenter::Boundary::kEnter
+                              appendSpace:NO];
+    }
+
+    char value = (char)charCode;
+    if ((input.isShiftHold || input.isCapsLockOn) && isLetter) {
+        value = (char)std::toupper(static_cast<unsigned char>(value));
+    }
+    _mixedInputPending.push_back(value);
+    stateCallback([self buildInputtingState]);
+    return YES;
 }
 
 - (BOOL)handleInput:(KeyHandlerInput *)input state:(InputState *)inState stateCallback:(void (^)(InputState *))stateCallback errorCallback:(void (^)(void))errorCallback
@@ -376,6 +583,10 @@ InputMode InputModePlainBopomofo = @"org.openvanilla.inputmethod.McBopomofo.Plai
     BOOL isFunctionKey = (input.isCommandHold || input.isOptionHold || input.isNumericPad) || input.isControlHotKey;
     if (![state isKindOfClass:[InputStateNotEmpty class]] && ![state isKindOfClass:[InputStateAssociatedPhrasesPlain class]] && !([state isKindOfClass:[InputStateAssociatedPhrases class]] && [(InputStateAssociatedPhrases *)state autoTriggered]) && isFunctionKey) {
         return NO;
+    }
+
+    if ([self _handleMixedInput:input state:state stateCallback:stateCallback]) {
+        return YES;
     }
 
     // Caps Lock processing : if Caps Lock is on, temporarily disable bopomofo.
@@ -685,6 +896,9 @@ InputMode InputModePlainBopomofo = @"org.openvanilla.inputmethod.McBopomofo.Plai
 
     // MARK: Enter
     if (charCode == 13) {
+        if (input.isControlHold && [self _gridContainsMixedLiteral]) {
+            return [self _handleEnterWithState:state stateCallback:stateCallback errorCallback:errorCallback];
+        }
         if (_inputMode == InputModeBopomofo && input.isControlHold) {
             NSString *string = @"";
             if (Preferences.controlEnterOutput == ControlEnterOutputOff) {
@@ -954,7 +1168,10 @@ InputMode InputModePlainBopomofo = @"org.openvanilla.inputmethod.McBopomofo.Plai
     if (input.isShiftHold) {
         // Shift + left
         if (currentState.cursorIndex > 0) {
-            if (Preferences.bopomofoFontAnnotationSupportEnabled) {
+            if ([self _gridContainsMixedLiteral]) {
+                errorCallback();
+                stateCallback(currentState);
+            } else if (Preferences.bopomofoFontAnnotationSupportEnabled) {
                 currentState = [self _inputtingStateWithMarkingStateUnsupportedTooltip:currentState];
                 errorCallback();
                 stateCallback(currentState);
@@ -998,7 +1215,10 @@ InputMode InputModePlainBopomofo = @"org.openvanilla.inputmethod.McBopomofo.Plai
     if (input.isShiftHold) {
         // Shift + Right
         if (currentState.cursorIndex < currentState.composingBuffer.length) {
-            if (Preferences.bopomofoFontAnnotationSupportEnabled) {
+            if ([self _gridContainsMixedLiteral]) {
+                errorCallback();
+                stateCallback(currentState);
+            } else if (Preferences.bopomofoFontAnnotationSupportEnabled) {
                 currentState = [self _inputtingStateWithMarkingStateUnsupportedTooltip:currentState];
                 errorCallback();
                 stateCallback(currentState);
@@ -2426,7 +2646,9 @@ InputMode InputModePlainBopomofo = @"org.openvanilla.inputmethod.McBopomofo.Plai
 
         bool nodeHasBopomofoAnnotation = false;
         McBopomofo::VariantAnnotator::CombinedResult nodeAnnotationResult;
-        if (!Preferences.bopomofoFontAnnotationSupportEnabled || _inputMode == InputModePlainBopomofo) {
+        if (_mixedLanguageModel->isLiteralReading(node->reading())) {
+            composed += value;
+        } else if (!Preferences.bopomofoFontAnnotationSupportEnabled || _inputMode == InputModePlainBopomofo) {
             composed += value;
         } else if (!LanguageModelManager.variantAnnotator->loaded()) {
             composed += value;
@@ -2519,11 +2741,23 @@ InputMode InputModePlainBopomofo = @"org.openvanilla.inputmethod.McBopomofo.Plai
     std::string tailStr = composed.substr(composedCursor, composed.length() - composedCursor);
 
     NSString *head = @(headStr.c_str());
-    NSString *reading = @(_bpmfReadingBuffer->composedString().c_str());
+    NSString *reading = _mixedInputPending.empty()
+        ? @(_bpmfReadingBuffer->composedString().c_str())
+        : [self _mixedInputPreview];
     NSString *tail = @(tailStr.c_str());
     NSString *composedText = [head stringByAppendingString:[reading stringByAppendingString:tail]];
     NSInteger cursorIndex = head.length + reading.length;
-    InputStateInputting *newState = [[InputStateInputting alloc] initWithComposingBuffer:composedText cursorIndex:cursorIndex];
+    InputStateInputting *newState;
+    if (_mixedInputPending.empty()) {
+        newState = [[InputStateInputting alloc] initWithComposingBuffer:composedText cursorIndex:cursorIndex];
+    } else {
+        BOOL protectedAscii = _mixedInputSegmenter->segment(_mixedInputPending).protectedAscii;
+        newState = [[InputStateMixedInputting alloc]
+            initWithComposingBuffer:composedText
+                      cursorIndex:cursorIndex
+                         rawInput:@(_mixedInputPending.c_str())
+                   protectedAscii:protectedAscii];
+    }
     newState.tooltip = tooltip;
     return newState;
 }

@@ -40,6 +40,8 @@ private let kChineseConversionEnabledKey = "ChineseConversionEnabled"
 private let kHalfWidthPunctuationEnabledKey = "HalfWidthPunctuationEnable"
 private let kEscToCleanInputBufferKey = "EscToCleanInputBuffer"
 private let kKeepReadingUponCompositionError = "KeepReadingUponCompositionError"
+private let kMixedInputEnabledKey = "MixedInputEnabled"
+private let kMixedInputPersonalizationEnabledKey = "MixedInputPersonalizationEnabled"
 
 private let kCandidateTextFontName = "CandidateTextFontName"
 private let kCandidateKeyLabelFontName = "CandidateKeyLabelFontName"
@@ -224,6 +226,8 @@ class Preferences: NSObject {
             kHalfWidthPunctuationEnabledKey,
             kEscToCleanInputBufferKey,
             kKeepReadingUponCompositionError,
+            kMixedInputEnabledKey,
+            kMixedInputPersonalizationEnabledKey,
             kCandidateTextFontName,
             kCandidateKeyLabelFontName,
             kCandidateKeys,
@@ -266,6 +270,9 @@ class Preferences: NSObject {
         Preferences.enableUserPhrasesInPlainBopomofo = Preferences.enableUserPhrasesInPlainBopomofo
         Preferences.allowMovingCursorWhenChoosingCandidates =
             Preferences.allowMovingCursorWhenChoosingCandidates
+        Preferences.mixedInputEnabled = Preferences.mixedInputEnabled
+        Preferences.mixedInputPersonalizationEnabled =
+            Preferences.mixedInputPersonalizationEnabled
     }
 
     @EnumUserDefault(key: kKeyboardLayoutPreferenceKey, defaultValue: KeyboardLayout.standard)
@@ -321,6 +328,12 @@ class Preferences: NSObject {
 
     @UserDefault(key: kKeepReadingUponCompositionError, defaultValue: false)
     @objc static var keepReadingUponCompositionError: Bool
+
+    @UserDefault(key: kMixedInputEnabledKey, defaultValue: false)
+    @objc static var mixedInputEnabled: Bool
+
+    @UserDefault(key: kMixedInputPersonalizationEnabledKey, defaultValue: false)
+    @objc static var mixedInputPersonalizationEnabled: Bool
 
     // MARK: Optional settings
 
@@ -626,6 +639,12 @@ extension Preferences {
         )
         lines.append(
             "  - Chinese Conversion: \(Preferences.chineseConversionEnabled ? "Enabled" : "Disabled")"
+        )
+        lines.append(
+            "  - Mixed Input: \(Preferences.mixedInputEnabled ? "Enabled" : "Disabled")"
+        )
+        lines.append(
+            "  - Mixed Input Personalization: \(Preferences.mixedInputPersonalizationEnabled ? "Enabled" : "Disabled")"
         )
         lines
             .append(

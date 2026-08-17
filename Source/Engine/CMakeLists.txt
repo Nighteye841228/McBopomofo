@@ -14,6 +14,8 @@ add_library(McBopomofoLMLib
         ByteBlockBackedDictionary.cpp
         McBopomofoLM.cpp
         McBopomofoLM.h
+        MixedInputLanguageModel.cpp
+        MixedInputLanguageModel.h
         MixedInputSegmenter.cpp
         MixedInputSegmenter.h
         MemoryMappedFile.h
@@ -73,6 +75,7 @@ if (ENABLE_TEST)
                 AssociatedPhrasesV2Test.cpp
                 ByteBlockBackedDictionaryTest.cpp
                 McBopomofoLMTest.cpp
+                MixedInputLanguageModelTest.cpp
                 MixedInputSegmenterTest.cpp
                 MemoryMappedFileTest.cpp
                 ParselessLMTest.cpp

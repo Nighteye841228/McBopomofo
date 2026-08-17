@@ -333,6 +333,31 @@ class InputState: NSObject {
         }
     }
 
+    /// Represents automatic Chinese/English detection with an unresolved raw
+    /// ASCII token. The state is immutable; a new instance is created for
+    /// every key event.
+    @objc(InputStateMixedInputting)
+    class MixedInputting: Inputting {
+        @objc private(set) var rawInput: String
+        @objc private(set) var protectedAscii: Bool
+
+        @objc(initWithComposingBuffer:cursorIndex:rawInput:protectedAscii:)
+        init(
+            composingBuffer: String,
+            cursorIndex: UInt,
+            rawInput: String,
+            protectedAscii: Bool
+        ) {
+            self.rawInput = rawInput
+            self.protectedAscii = protectedAscii
+            super.init(composingBuffer: composingBuffer, cursorIndex: cursorIndex)
+        }
+
+        override var description: String {
+            "<InputState.MixedInputting, composingBuffer:\(composingBuffer), cursorIndex:\(cursorIndex), protectedAscii:\(protectedAscii)>"
+        }
+    }
+
     // MARK: -
 
     private let kMinMarkRangeLength = 2
