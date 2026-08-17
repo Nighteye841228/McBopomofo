@@ -1,7 +1,7 @@
 # 中英文自動混合輸入功能規格
 
-- 文件狀態：第一版規格已定案，可進入實作
-- 最後更新：2026-08-18T03:41:47+08:00
+- 文件狀態：第一版規格已定案，階段 0 與階段 1 已開始實作
+- 最後更新：2026-08-18T03:53:27+08:00
 - 第一版範圍：McBopomofo 主輸入模式、標準注音鍵盤、一般注音與可列印 ASCII
 - 建議實作語言：C++，直接整合既有 `BopomofoReadingBuffer`、`McBopomofoLM` 與 `ReadingGrid`
 
@@ -20,6 +20,23 @@
 這個規則比原先的「中英文雙語評分模型」簡單，主要工作變成一個確定性的增量分段器。由於分段器必須頻繁使用本專案現成的 C++ 注音配置與中文語言模型，第一版直接以 C++ 實作比新增 Rust static library、C ABI、Cargo 與 universal archive 更合適。Rust 可在日後需要獨立模型或更複雜解碼器時再評估。
 
 功能與本機個人化學習各有一個設定開關，兩者預設關閉。個人化只保存最近 30 天的分類選擇摘要，不保存完整句子。
+
+## 實作狀態
+
+| 範圍 | 狀態 | 備註 |
+|---|---|---|
+| strict parser 與混合分段器 | 已實作 | C++ 純函式，已有核心範例與 edge case 測試。 |
+| literal language model | 已實作 | 每個 ASCII 字元使用 session-scoped opaque reading。 |
+| `KeyHandler` 基本路由與 `MixedInputting` | 已實作，待完整 Xcode 驗證 | 功能開關預設關閉，只套用主模式與 Standard layout。 |
+| 設定 UI 與三語在地化 | 已實作 | 主功能與個人化各有開關，皆預設關閉。 |
+| 混合替代候選 | 尚未實作 | 階段 2。 |
+| 30 天個人化模型 | 尚未實作 | 階段 2；目前開關只保留設定值，不影響判定。 |
+| macOS 10.15 | 專案設定已完成，待 runtime 驗證 | Xcode deployment target 已設為 10.15。 |
+
+## 規格修訂紀錄
+
+- `R1`（2026-08-18T03:53:27+08:00）：KeyHandler 第一版使用 shadow raw token 產生預覽，遇到硬邊界才將中文 reading 與 literal 寫入 grid。這與「先插入 provisional node、必要時回復」具有相同外顯結果，但在 `a3@example.com` 回溯案例中不必刪除已建立的 grid node，降低游標與候選狀態失配風險。
+- `R2`（2026-08-18T03:53:27+08:00）：連續數字必須達三碼才單獨構成 protected ASCII 證據。兩碼數字可能是合法注音 component 加聲調，例如 `vu04`，不可直接把整段判成 ASCII；`sha256` 仍會受保護。
 
 ## 已確認的產品決策
 
@@ -143,10 +160,10 @@ flowchart LR
 3. 有聲調終止鍵時，選擇最長、符合嚴格順序且 LM 有詞彙的中文後綴；前方無法形成中文的部分成為 literal。
 4. 空白到達時，只有「整個 pending 恰為一個合法一聲 reading」才消耗空白並插入中文；否則 pending 以 ASCII 輸出，空白本身也保留。
 5. Enter 不代表一聲；尚未完成的 pending 以 ASCII 原文 flush，再執行一般提交。
-6. 已出現 `@`、`://`、路徑 separator、底線、加號、井號、等號、多位數字等結構證據時，整個 token 進入 protected ASCII，直到空白或明確中文新起點。
+6. 已出現 `@`、`://`、路徑 separator、底線、加號、井號、等號、連續三碼以上數字等結構證據時，整個 token 進入 protected ASCII，直到空白或明確中文新起點。
 7. 若同時存在合理中文與 ASCII，先保持 pending；硬邊界仍無法消歧時使用「明確英文、個人化、中文、ASCII」的優先序。
 
-coordinator 必須替目前尚未遇到硬邊界的 token 保存 raw provenance 與已插入 grid 的 node 範圍。聲調完成的中文可先顯示在 grid，但仍屬可回復片段；如果稍後出現 `@`、`://` 等強 ASCII 證據，就刪除該 token 對應的暫定 nodes，依原始按鍵重建成 literal。空白或 Enter 才結束這個可回復視窗。這是正確處理 `a3@example.com` 等案例的必要條件。
+coordinator 必須替目前尚未遇到硬邊界的 token 保存 raw provenance。第一版採 shadow plan：聲調完成的中文先由 `MixedInputting` 顯示預覽，但不立刻寫入 grid；如果稍後出現 `@`、`://` 等強 ASCII 證據，就直接用同一份 raw token 重新分段。空白、Enter、游標移動或叫出候選時，才把當前 plan 固定成中文 reading 與逐字 literal。這是正確處理 `a3@example.com` 等案例的必要條件。
 
 `callsu3` 在 `3` 到達後，嚴格 parser 找到最長中文後綴 `su3`，前綴 `call` 因重複 component／順序不合法而保留 ASCII，得到 `call你`。
 
@@ -172,10 +189,10 @@ coordinator 必須替目前尚未遇到硬邊界的 token 保存 raw provenance 
 
 ### 5. InputState
 
-建議新增：
+新增：
 
 - `InputState.MixedInputting`：繼承 `Inputting`，帶有 pending raw range、目前解讀及歧義標記。
-- `InputState.ChoosingMixedInputCandidate`：提供中文與原始 ASCII 替代方案；選擇後建立新 state，不修改舊 state。
+- `InputState.ChoosingMixedInputCandidate`：階段 2 新增，提供中文與原始 ASCII 替代方案；選擇後建立新 state，不修改舊 state。
 
 組字 UI 仍只由 state 推導，不把判斷旗標散落在 controller。
 
