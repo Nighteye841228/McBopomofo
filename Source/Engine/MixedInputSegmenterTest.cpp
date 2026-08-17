@@ -23,7 +23,8 @@ class MixedInputSegmenterTest : public ::testing::Test {
     });
   }
 
-  std::set<std::string> readings = {"ㄋㄧˇ", "ㄨㄛ", "ㄐㄧˋ", "ㄇˇ"};
+  std::set<std::string> readings = {"ㄋㄧˇ", "ㄨㄛ", "ㄨㄛˇ", "ㄐㄧˋ", "ㄇˇ",
+                                    "ㄒㄧㄢˋ", "ㄗㄞˋ"};
 };
 
 TEST_F(MixedInputSegmenterTest, KeepsInvalidBopomofoAsLiteral) {
@@ -36,6 +37,17 @@ TEST_F(MixedInputSegmenterTest, FindsLongestChineseSuffix) {
   auto result = makeSegmenter().segment("callsu3");
   EXPECT_EQ(result.segments,
             (std::vector<Segment>{{Kind::kLiteral, "call", ""},
+                                  {Kind::kChinese, "su3", "ㄋㄧˇ"}}));
+}
+
+TEST_F(MixedInputSegmenterTest, SegmentsCoreMixedInputExample) {
+  auto result = makeSegmenter().segment("ji3vu04y94callsu3");
+  EXPECT_FALSE(result.protectedAscii);
+  EXPECT_EQ(result.segments,
+            (std::vector<Segment>{{Kind::kChinese, "ji3", "ㄨㄛˇ"},
+                                  {Kind::kChinese, "vu04", "ㄒㄧㄢˋ"},
+                                  {Kind::kChinese, "y94", "ㄗㄞˋ"},
+                                  {Kind::kLiteral, "call", ""},
                                   {Kind::kChinese, "su3", "ㄋㄧˇ"}}));
 }
 

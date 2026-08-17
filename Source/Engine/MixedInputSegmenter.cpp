@@ -97,7 +97,7 @@ bool MixedInputSegmenter::IsSupportedAscii(char key) {
 }
 
 bool MixedInputSegmenter::HasStructuralAsciiEvidence(std::string_view raw) {
-  bool previousWasDigit = false;
+  size_t consecutiveDigits = 0;
   for (char key : raw) {
     unsigned char value = static_cast<unsigned char>(key);
     if (value >= 'A' && value <= 'Z') {
@@ -119,11 +119,14 @@ bool MixedInputSegmenter::HasStructuralAsciiEvidence(std::string_view raw) {
         break;
     }
 
-    bool isDigit = value >= '0' && value <= '9';
-    if (isDigit && previousWasDigit) {
+    if (value >= '0' && value <= '9') {
+      ++consecutiveDigits;
+    } else {
+      consecutiveDigits = 0;
+    }
+    if (consecutiveDigits >= 3) {
       return true;
     }
-    previousWasDigit = isDigit;
   }
   return false;
 }
