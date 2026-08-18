@@ -152,7 +152,6 @@ bool MixedInputSegmenter::HasStructuralAsciiEvidence(std::string_view raw) {
 
     switch (key) {
       case '@':
-      case '.':
       case '\\':
       case '_':
       case '+':
@@ -164,6 +163,9 @@ bool MixedInputSegmenter::HasStructuralAsciiEvidence(std::string_view raw) {
         break;
     }
 
+    // Period is the Standard Bopomofo key for ㄡ. An email address is already
+    // protected by '@', and a URL by its scheme separator, so a period alone
+    // cannot be treated as decisive ASCII evidence.
     // Slash is also the Standard Bopomofo key for ㄥ; only treat it as
     // structural ASCII when it participates in a URL scheme separator.
     if (key == ':' && index + 2 < raw.size() && raw[index + 1] == '/' &&

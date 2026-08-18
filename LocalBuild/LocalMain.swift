@@ -98,6 +98,10 @@ enum LocalMain {
             fputs("Unexpected report sentence result: \(actual)\n", stderr)
             return 13
         }
+        guard evaluate("u.3ru.4") == "有就", evaluate(".u3") == "有" else {
+            fputs("OU-key regression failed\n", stderr)
+            return 15
+        }
 
         let candidateHandler = KeyHandler()
         candidateHandler.inputMode = .bopomofo
@@ -124,6 +128,31 @@ enum LocalMain {
         else {
             fputs("Mixed candidate list did not preserve the original candidates\n", stderr)
             return 14
+        }
+        let carryHandler = KeyHandler()
+        carryHandler.inputMode = .bopomofo
+        carryHandler.syncWithPreferences()
+        let carryInputting = InputState.Inputting(composingBuffer: "與", cursorIndex: 1)
+        var carryState: InputState = InputState.AssociatedPhrases(
+            previousState: carryInputting, prefixCursorIndex: 0,
+            prefixReading: "ㄩˇ", prefixValue: "與", selectedIndex: 0, candidates: [],
+            useVerticalMode: false, autoTriggered: true)
+        for key in "g0 u " {
+            let text = String(key)
+            let input = KeyHandlerInput(
+                inputText: text, keyCode: 0, charCode: text.utf16.first ?? 0,
+                flags: [], isVerticalMode: false)
+            _ = carryHandler.handle(
+                input: input, state: carryState,
+                stateCallback: { carryState = $0 }, errorCallback: {})
+        }
+        guard let inputting = carryState as? InputState.Inputting,
+            inputting.composingBuffer.hasSuffix("山一")
+        else {
+            let actual =
+                (carryState as? InputState.Inputting)?.composingBuffer ?? "<not inputting>"
+            fputs("Dismissed candidate left a detached component: \(actual)\n", stderr)
+            return 16
         }
         print("McBopomofo local build self-check passed: \(reportExpected)")
         return 0

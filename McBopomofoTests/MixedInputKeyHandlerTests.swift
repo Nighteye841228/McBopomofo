@@ -142,6 +142,32 @@ final class MixedInputKeyHandlerTests: XCTestCase {
         XCTAssertEqual(composingBuffer, "撞")
     }
 
+    func testOuKeyIsParsedAsBopomofoInsteadOfAsciiPunctuation() {
+        sendKeys("u.3ru.4")
+        XCTAssertEqual(composingBuffer, "有就")
+    }
+
+    func testSyllableCanStartWithPunctuationPositionKey() {
+        sendKeys(".u3")
+        XCTAssertEqual(composingBuffer, "有")
+    }
+
+    func testDismissedAssociatedPhraseDoesNotLeaveFirstComponentBehind() {
+        sendKeys("m3")
+        guard let inputting = state as? InputState.NotEmpty else {
+            return XCTFail("Expected inputting state")
+        }
+        state = InputState.AssociatedPhrases(
+            previousState: inputting, prefixCursorIndex: 0, prefixReading: "ㄩˇ",
+            prefixValue: inputting.composingBuffer, selectedIndex: 0, candidates: [],
+            useVerticalMode: false, autoTriggered: true)
+        sendKeys("g0")
+        XCTAssertTrue(send(" "))
+        sendKeys("u")
+        XCTAssertTrue(send(" "))
+        XCTAssertTrue(composingBuffer.hasSuffix("山一"), composingBuffer)
+    }
+
     func testReportSentenceRegression() {
         sendKeys("fu062j0 dashboardm3g6u04y xul4g4rm,6cj84r,u4au04interfaced9 z8 ")
         XCTAssertEqual(composingBuffer, "前端dashboard與實驗資料視覺化介面interface開發")

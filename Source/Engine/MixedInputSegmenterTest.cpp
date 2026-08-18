@@ -23,8 +23,9 @@ class MixedInputSegmenterTest : public ::testing::Test {
     });
   }
 
-  std::set<std::string> readings = {"ㄋㄧˇ", "ㄨㄛ", "ㄨㄛˇ", "ㄐㄧˋ", "ㄇˇ",
-                                    "ㄒㄧㄢˋ", "ㄗㄞˋ", "ㄓㄨㄥ", "ㄨㄣˊ"};
+  std::set<std::string> readings = {"ㄋㄧˇ", "ㄨㄛ", "ㄨㄛˇ", "ㄧㄡˇ", "ㄐㄧㄡˋ",
+                                    "ㄐㄧˋ", "ㄇˇ", "ㄒㄧㄢˋ", "ㄗㄞˋ",
+                                    "ㄓㄨㄥ", "ㄨㄣˊ"};
 };
 
 TEST_F(MixedInputSegmenterTest, KeepsInvalidBopomofoAsLiteral) {
@@ -116,6 +117,18 @@ TEST_F(MixedInputSegmenterTest, SlashAloneIsNotStructuralAsciiEvidence) {
   EXPECT_FALSE(MixedInputSegmenter::HasStructuralAsciiEvidence("5j/"));
   EXPECT_TRUE(MixedInputSegmenter::HasStructuralAsciiEvidence(
       "https://example.com"));
+}
+
+TEST_F(MixedInputSegmenterTest, PeriodAloneIsNotStructuralAsciiEvidence) {
+  EXPECT_FALSE(MixedInputSegmenter::HasStructuralAsciiEvidence("u.3"));
+  EXPECT_FALSE(MixedInputSegmenter::HasStructuralAsciiEvidence("ru.4"));
+
+  auto you = makeSegmenter().segment("u.3");
+  EXPECT_EQ(you.segments,
+            (std::vector<Segment>{{Kind::kChinese, "u.3", "ㄧㄡˇ"}}));
+  auto jiu = makeSegmenter().segment("ru.4");
+  EXPECT_EQ(jiu.segments,
+            (std::vector<Segment>{{Kind::kChinese, "ru.4", "ㄐㄧㄡˋ"}}));
 }
 
 TEST_F(MixedInputSegmenterTest, EnterDoesNotCompleteFirstTone) {

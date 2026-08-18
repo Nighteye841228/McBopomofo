@@ -512,6 +512,16 @@ enum class MixedInputInterpretation {
     }
 
     UniChar charCode = input.charCode;
+    if (!input.isCommandHold && !input.isOptionHold && !input.isControlHold &&
+        !input.isNumericPad && !_bpmfReadingBuffer->isEmpty()) {
+        // A key can reach the legacy reading buffer while a candidate state is
+        // being dismissed. Move that partial reading back into the mixed raw
+        // buffer before handling the next key; otherwise its first component
+        // remains detached and can combine with a much later syllable.
+        std::string legacyKeys = _bpmfReadingBuffer->standardLayoutQueryString();
+        _mixedInputPending.insert(0, legacyKeys);
+        _bpmfReadingBuffer->clear();
+    }
     if (charCode == 27 && !_mixedInputPending.empty()) {
         _mixedInputPending.clear();
         if (Preferences.escToCleanInputBuffer) {
@@ -577,8 +587,9 @@ enum class MixedInputInterpretation {
     }
 
     bool isLetter = std::isalpha(static_cast<unsigned char>(charCode));
+    bool isBopomofoKey = _bpmfReadingBuffer->isValidKey((char)charCode);
     bool startsOrContinuesToken = !_mixedInputPending.empty() || input.isCapsLockOn ||
-        isLetter || std::isdigit(static_cast<unsigned char>(charCode));
+        isLetter || isBopomofoKey;
     if (!startsOrContinuesToken) {
         return NO;
     }
