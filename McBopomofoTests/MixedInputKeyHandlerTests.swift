@@ -125,8 +125,9 @@ final class MixedInputKeyHandlerTests: XCTestCase {
         guard let choosing = state as? InputState.ChoosingMixedInputCandidate else {
             return XCTFail("Expected mixed candidate state, got \(state)")
         }
-        XCTAssertEqual(choosing.candidates.count, 2)
-        XCTAssertTrue(choosing.candidates.contains { $0.value == "a3" })
+        XCTAssertGreaterThan(choosing.candidates.count, 1)
+        XCTAssertEqual(choosing.englishCandidateIndex, 1)
+        XCTAssertEqual(choosing.candidates[1].value, "a3")
     }
 
     func testSelectingEnglishAlternativeKeepsRawInput() {
@@ -134,5 +135,15 @@ final class MixedInputKeyHandlerTests: XCTestCase {
         XCTAssertTrue(sendDown())
         state = handler.applyMixedInputCandidate(useEnglish: true)
         XCTAssertEqual(composingBuffer, "a3")
+    }
+
+    func testAcceptsNonCanonicalBopomofoComponentOrder() {
+        sendKeys("5;j4")
+        XCTAssertEqual(composingBuffer, "撞")
+    }
+
+    func testReportSentenceRegression() {
+        sendKeys("fu062j0 dashboardm3g6u04y xul4g4rm,6cj84r,u4au04interfaced9 z8 ")
+        XCTAssertEqual(composingBuffer, "前端dashboard與實驗資料視覺化介面interface開發")
     }
 }

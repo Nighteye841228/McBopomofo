@@ -24,7 +24,7 @@ class MixedInputSegmenterTest : public ::testing::Test {
   }
 
   std::set<std::string> readings = {"ㄋㄧˇ", "ㄨㄛ", "ㄨㄛˇ", "ㄐㄧˋ", "ㄇˇ",
-                                    "ㄒㄧㄢˋ", "ㄗㄞˋ"};
+                                    "ㄒㄧㄢˋ", "ㄗㄞˋ", "ㄓㄨㄥ", "ㄨㄣˊ"};
 };
 
 TEST_F(MixedInputSegmenterTest, KeepsInvalidBopomofoAsLiteral) {
@@ -38,6 +38,21 @@ TEST_F(MixedInputSegmenterTest, FindsLongestChineseSuffix) {
   EXPECT_EQ(result.segments,
             (std::vector<Segment>{{Kind::kLiteral, "call", ""},
                                   {Kind::kChinese, "su3", "ㄋㄧˇ"}}));
+}
+
+TEST_F(MixedInputSegmenterTest, PrefersShortestChineseSuffixAfterAscii) {
+  MixedInputSegmenter allReadings([](const std::string&) { return true; });
+  auto isolated = allReadings.segment("su3");
+  ASSERT_EQ(isolated.segments.size(), 1);
+  std::string expectedReading = isolated.segments[0].reading;
+  MixedInputSegmenter segmenter([&](const std::string& reading) {
+    return reading == expectedReading;
+  });
+  auto result = segmenter.segment("callsu3");
+  ASSERT_EQ(result.segments.size(), 2);
+  EXPECT_EQ(result.segments[0], (Segment{Kind::kLiteral, "call", ""}));
+  EXPECT_EQ(result.segments[1].kind, Kind::kChinese);
+  EXPECT_EQ(result.segments[1].raw, "su3");
 }
 
 TEST_F(MixedInputSegmenterTest, SegmentsCoreMixedInputExample) {
@@ -57,6 +72,52 @@ TEST_F(MixedInputSegmenterTest, SpaceCompletesFirstTone) {
             (std::vector<Segment>{{Kind::kChinese, "ji", "ㄨㄛ"}}));
 }
 
+TEST_F(MixedInputSegmenterTest, SpaceFindsFirstToneSuffixAfterAscii) {
+  MixedInputSegmenter allReadings([](const std::string&) { return true; });
+  auto isolated = allReadings.segment("d9", Boundary::kSpace);
+  ASSERT_EQ(isolated.segments.size(), 1);
+  std::string expectedReading = isolated.segments[0].reading;
+  MixedInputSegmenter segmenter([&](const std::string& reading) {
+    return reading == expectedReading;
+  });
+  auto result = segmenter.segment("interfaced9", Boundary::kSpace);
+  ASSERT_EQ(result.segments.size(), 2);
+  EXPECT_EQ(result.segments[0], (Segment{Kind::kLiteral, "interface", ""}));
+  EXPECT_EQ(result.segments[1].kind, Kind::kChinese);
+  EXPECT_EQ(result.segments[1].raw, "d9");
+}
+
+TEST_F(MixedInputSegmenterTest, AllowsSingleComponentSuffixBeforeTone) {
+  MixedInputSegmenter allReadings([](const std::string&) { return true; });
+  auto isolated = allReadings.segment("m3");
+  ASSERT_EQ(isolated.segments.size(), 1);
+  std::string expectedReading = isolated.segments[0].reading;
+  MixedInputSegmenter segmenter([&](const std::string& reading) {
+    return reading == expectedReading;
+  });
+  auto result = segmenter.segment("dashboardm3");
+  ASSERT_EQ(result.segments.size(), 2);
+  EXPECT_EQ(result.segments[0], (Segment{Kind::kLiteral, "dashboard", ""}));
+  EXPECT_EQ(result.segments[1].kind, Kind::kChinese);
+  EXPECT_EQ(result.segments[1].raw, "m3");
+}
+
+TEST_F(MixedInputSegmenterTest, ParsesChineseSyllablesSeparatedByFirstToneSpace) {
+  auto result = makeSegmenter().segment("5j/", Boundary::kSpace);
+  EXPECT_EQ(result.segments,
+            (std::vector<Segment>{{Kind::kChinese, "5j/", "ㄓㄨㄥ"}}));
+
+  result = makeSegmenter().segment("jp6", Boundary::kEnter);
+  EXPECT_EQ(result.segments,
+            (std::vector<Segment>{{Kind::kChinese, "jp6", "ㄨㄣˊ"}}));
+}
+
+TEST_F(MixedInputSegmenterTest, SlashAloneIsNotStructuralAsciiEvidence) {
+  EXPECT_FALSE(MixedInputSegmenter::HasStructuralAsciiEvidence("5j/"));
+  EXPECT_TRUE(MixedInputSegmenter::HasStructuralAsciiEvidence(
+      "https://example.com"));
+}
+
 TEST_F(MixedInputSegmenterTest, EnterDoesNotCompleteFirstTone) {
   auto result = makeSegmenter().segment("ji", Boundary::kEnter);
   EXPECT_EQ(result.segments,
@@ -67,6 +128,18 @@ TEST_F(MixedInputSegmenterTest, RejectsComponentOverwrite) {
   auto result = makeSegmenter().segment("call3");
   EXPECT_EQ(result.segments,
             (std::vector<Segment>{{Kind::kLiteral, "call3", ""}}));
+}
+
+TEST_F(MixedInputSegmenterTest, AcceptsNonCanonicalComponentOrder) {
+  MixedInputSegmenter segmenter([](const std::string&) { return true; });
+  auto canonical = segmenter.segment("5j;4");
+  auto reordered = segmenter.segment("5;j4");
+
+  ASSERT_EQ(canonical.segments.size(), 1);
+  ASSERT_EQ(reordered.segments.size(), 1);
+  EXPECT_EQ(canonical.segments[0].kind, Kind::kChinese);
+  EXPECT_EQ(reordered.segments[0].kind, Kind::kChinese);
+  EXPECT_EQ(canonical.segments[0].reading, reordered.segments[0].reading);
 }
 
 TEST_F(MixedInputSegmenterTest, ProtectsEmailRetroactively) {

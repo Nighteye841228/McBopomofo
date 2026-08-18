@@ -54,8 +54,21 @@ extension McBopomofoInputMethodController: CandidateControllerDelegate {
 
         switch state {
         case let state as InputState.ChoosingMixedInputCandidate:
-            let inputting = keyHandler.applyMixedInputCandidate(
-                useEnglish: Int(index) == state.englishCandidateIndex)
+            let selectedIndex = Int(index)
+            if selectedIndex == state.englishCandidateIndex {
+                let inputting = keyHandler.applyMixedInputCandidate(useEnglish: true)
+                handle(state: inputting, client: client)
+                return
+            }
+            _ = keyHandler.applyMixedInputCandidate(useEnglish: false)
+            let selectedCandidate = state.candidates[selectedIndex]
+            keyHandler.fixNode(
+                reading: selectedCandidate.reading, value: selectedCandidate.value,
+                originalCursorIndex: Int(state.originalCursorIndex),
+                useMoveCursorAfterSelectionSetting: true)
+            guard let inputting = keyHandler.buildInputtingState() as? InputState.Inputting else {
+                return
+            }
             handle(state: inputting, client: client)
         case let state as InputState.ChoosingCandidate:
             let selectedCandidate = state.candidates[Int(index)]

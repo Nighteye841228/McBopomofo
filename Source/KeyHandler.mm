@@ -69,6 +69,8 @@ enum class MixedInputInterpretation {
     std::unique_ptr<McBopomofo::MixedInputLanguageModel> _mixedLanguageModel;
     std::unique_ptr<McBopomofo::MixedInputSegmenter> _mixedInputSegmenter;
     std::string _mixedInputPending;
+    std::string _mixedInputLastRaw;
+    std::optional<size_t> _mixedInputLastReadingIndex;
 
     // user override model
     McBopomofo::UserOverrideModel *_userOverrideModel;
@@ -125,6 +127,8 @@ enum class MixedInputInterpretation {
         }
 
         _mixedInputPending.clear();
+        _mixedInputLastRaw.clear();
+        _mixedInputLastReadingIndex.reset();
 
         if (!_bpmfReadingBuffer->isEmpty()) {
             _bpmfReadingBuffer->clear();
@@ -325,6 +329,8 @@ enum class MixedInputInterpretation {
 {
     _bpmfReadingBuffer->clear();
     _mixedInputPending.clear();
+    _mixedInputLastRaw.clear();
+    _mixedInputLastReadingIndex.reset();
     _grid->clear();
     _mixedLanguageModel->clearLiterals();
     _latestWalk = Formosa::Gramambular2::ReadingGrid::WalkResult {};
@@ -426,6 +432,8 @@ enum class MixedInputInterpretation {
                                                     boundary:@"candidate"] == MixedInputPreferenceEnglish;
     }
 
+    _mixedInputLastRaw.clear();
+    _mixedInputLastReadingIndex.reset();
     if (useEnglish) {
         for (char value : raw) {
             std::string literal = _mixedLanguageModel->registerLiteral(std::string(1, value));
@@ -434,6 +442,8 @@ enum class MixedInputInterpretation {
     } else {
         for (const auto& segment : result.segments) {
             if (segment.kind == McBopomofo::MixedInputSegmenter::SegmentKind::kChinese) {
+                _mixedInputLastRaw = segment.raw;
+                _mixedInputLastReadingIndex = _grid->cursor();
                 _grid->insertReading(segment.reading);
                 continue;
             }
@@ -449,11 +459,8 @@ enum class MixedInputInterpretation {
     if (!useEnglish && boundary == McBopomofo::MixedInputSegmenter::Boundary::kSpace &&
         !result.segments.empty()) {
         const auto& last = result.segments.back();
-        size_t lastTone = raw.find_last_of("3467");
-        size_t tailStart = lastTone == std::string::npos ? 0 : lastTone + 1;
         spaceCompletedFirstTone =
-            last.kind == McBopomofo::MixedInputSegmenter::SegmentKind::kChinese &&
-            last.raw == raw.substr(tailStart);
+            last.kind == McBopomofo::MixedInputSegmenter::SegmentKind::kChinese;
     }
 
     if (appendSpace && !spaceCompletedFirstTone) {
@@ -467,17 +474,28 @@ enum class MixedInputInterpretation {
 
 - (InputState *)applyMixedInputCandidateUsingEnglish:(BOOL)useEnglish
 {
-    if (_mixedInputPending.empty()) {
+    if (_mixedInputLastRaw.empty() || !_mixedInputLastReadingIndex) {
         return [self buildInputtingState];
     }
 
-    NSString *rawInput = @(_mixedInputPending.c_str());
+    NSString *rawInput = @(_mixedInputLastRaw.c_str());
     [MixedInputPersonalization observeRawInput:rawInput
                                       boundary:@"candidate"
                                selectedEnglish:useEnglish];
-    [self _flushMixedInputWithBoundary:McBopomofo::MixedInputSegmenter::Boundary::kEnter
-                           appendSpace:NO
-                        interpretation:useEnglish ? MixedInputInterpretation::kEnglish : MixedInputInterpretation::kChinese];
+    if (useEnglish) {
+        size_t readingIndex = *_mixedInputLastReadingIndex;
+        if (readingIndex < _grid->length()) {
+            _grid->setCursor(readingIndex + 1);
+            _grid->deleteReadingBeforeCursor();
+            for (char value : _mixedInputLastRaw) {
+                std::string literal = _mixedLanguageModel->registerLiteral(std::string(1, value));
+                _grid->insertReading(literal);
+            }
+            [self _walk];
+        }
+    }
+    _mixedInputLastRaw.clear();
+    _mixedInputLastReadingIndex.reset();
     return [self buildInputtingState];
 }
 
@@ -522,34 +540,6 @@ enum class MixedInputInterpretation {
                               appendSpace:NO
                            interpretation:MixedInputInterpretation::kAutomatic];
         return NO;
-    }
-
-    if (input.isDown && !_mixedInputPending.empty()) {
-        McBopomofo::MixedInputSegmenter::Result result =
-            _mixedInputSegmenter->segment(_mixedInputPending);
-        BOOL hasChinese = NO;
-        std::string chineseText;
-        for (const auto& segment : result.segments) {
-            if (segment.kind == McBopomofo::MixedInputSegmenter::SegmentKind::kLiteral) {
-                chineseText += segment.raw;
-                continue;
-            }
-            hasChinese = YES;
-            auto unigrams = _languageModel->getUnigrams(segment.reading);
-            chineseText += unigrams.empty() ? segment.raw : unigrams.front().value();
-        }
-        if (hasChinese) {
-            InputStateInputting *inputting = (InputStateInputting *)[self buildInputtingState];
-            InputStateChoosingMixedInputCandidate *choosing =
-                [[InputStateChoosingMixedInputCandidate alloc]
-                    initWithComposingBuffer:inputting.composingBuffer
-                              cursorIndex:inputting.cursorIndex
-                                 rawInput:@(_mixedInputPending.c_str())
-                              chineseText:@(chineseText.c_str())
-                          useVerticalMode:input.useVerticalMode];
-            stateCallback(choosing);
-            return YES;
-        }
     }
 
     BOOL isNavigationKey = input.isCursorForward || input.isCursorBackward ||
@@ -610,7 +600,16 @@ enum class MixedInputInterpretation {
     if ((input.isShiftHold || input.isCapsLockOn) && isLetter) {
         value = (char)std::toupper(static_cast<unsigned char>(value));
     }
+    if (_mixedInputPending.empty()) {
+        _mixedInputLastRaw.clear();
+        _mixedInputLastReadingIndex.reset();
+    }
     _mixedInputPending.push_back(value);
+    if (value == '3' || value == '4' || value == '6' || value == '7') {
+        [self _flushMixedInputWithBoundary:McBopomofo::MixedInputSegmenter::Boundary::kNone
+                              appendSpace:NO
+                           interpretation:MixedInputInterpretation::kAutomatic];
+    }
     stateCallback([self buildInputtingState]);
     return YES;
 }
@@ -2883,6 +2882,25 @@ enum class MixedInputInterpretation {
     }
 
     InputStateChoosingCandidate *state = [[InputStateChoosingCandidate alloc] initWithComposingBuffer:inputting.composingBuffer cursorIndex:inputting.cursorIndex candidates:candidatesArray useVerticalMode:useVerticalMode];
+    if (!_mixedInputLastRaw.empty() && _mixedInputLastReadingIndex &&
+        *_mixedInputLastReadingIndex == self.actualCandidateCursorIndex &&
+        candidatesArray.count > 0) {
+        NSString *rawInput = @(_mixedInputLastRaw.c_str());
+        NSString *displayText = [NSString stringWithFormat:NSLocalizedString(@"English: %@", @""), rawInput];
+        InputStateCandidate *english = [[InputStateCandidate alloc]
+            initWithReading:@""
+                      value:rawInput
+                displayText:displayText
+                   rawValue:rawInput];
+        NSUInteger englishIndex = MIN((NSUInteger)1, candidatesArray.count);
+        [candidatesArray insertObject:english atIndex:englishIndex];
+        InputStateChoosingMixedInputCandidate *mixed = [[InputStateChoosingMixedInputCandidate alloc]
+            initWithChoosingCandidate:state
+                             rawInput:rawInput
+                           candidates:candidatesArray
+                englishCandidateIndex:englishIndex];
+        return mixed;
+    }
     return state;
 }
 

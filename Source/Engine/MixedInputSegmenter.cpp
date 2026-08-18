@@ -3,6 +3,7 @@
 
 #include "MixedInputSegmenter.h"
 
+#include <algorithm>
 #include <string>
 #include <utility>
 
@@ -13,10 +14,6 @@ namespace {
 
 bool IsToneKey(char key) {
   return key == '3' || key == '4' || key == '6' || key == '7';
-}
-
-size_t PhoneticKeyCount(std::string_view keys) {
-  return keys.empty() ? 0 : keys.size() - (IsToneKey(keys.back()) ? 1 : 0);
 }
 
 }  // namespace
@@ -43,25 +40,41 @@ MixedInputSegmenter::Result MixedInputSegmenter::segment(
       continue;
     }
 
-    std::optional<size_t> chineseStart;
-    std::optional<std::string> reading;
-    for (size_t start = pendingStart; start < toneIndex; ++start) {
+    auto readingAt = [&](size_t start) -> std::optional<std::string> {
       std::string_view keys = raw.substr(start, toneIndex - start + 1);
       std::optional<std::string> candidate = strictReading(keys, false);
       if (!candidate || !hasUnigrams_(*candidate)) {
-        continue;
+        return std::nullopt;
       }
 
-      // When a Chinese suffix follows an ASCII prefix, require at least two
-      // phonetic keys. This keeps tokens such as "version4" intact while
-      // still allowing an entire short token such as "a3" to be Chinese.
-      if (start > pendingStart && PhoneticKeyCount(keys) < 2) {
-        continue;
-      }
+      return candidate;
+    };
 
-      chineseStart = start;
-      reading = std::move(candidate);
-      break;
+    std::optional<size_t> chineseStart;
+    std::optional<std::string> reading = readingAt(pendingStart);
+    if (reading) {
+      chineseStart = pendingStart;
+    } else {
+      // Prefer the shortest suffix with at least two phonetic components, then
+      // fall back to a one-component syllable such as m3 (ㄩˇ). This keeps the
+      // final letter in "call" out of "su3" without losing valid short forms.
+      if (toneIndex >= pendingStart + 2) {
+        for (size_t start = toneIndex - 1; start > pendingStart; --start) {
+          size_t candidateStart = start - 1;
+          reading = readingAt(candidateStart);
+          if (reading) {
+            chineseStart = candidateStart;
+            break;
+          }
+        }
+      }
+      if (!reading && toneIndex > pendingStart) {
+        size_t candidateStart = toneIndex - 1;
+        reading = readingAt(candidateStart);
+        if (reading) {
+          chineseStart = candidateStart;
+        }
+      }
     }
 
     if (!chineseStart || !reading) {
@@ -79,10 +92,42 @@ MixedInputSegmenter::Result MixedInputSegmenter::segment(
 
   std::string_view tail = raw.substr(pendingStart);
   if (boundary == Boundary::kSpace && !tail.empty()) {
-    std::optional<std::string> reading = strictReading(tail, true);
-    if (reading && hasUnigrams_(*reading)) {
-      result.segments.push_back(
-          {SegmentKind::kChinese, std::string(tail), *reading});
+    auto firstToneReadingAt = [&](size_t start) -> std::optional<std::string> {
+      std::string_view keys = raw.substr(start);
+      std::optional<std::string> candidate = strictReading(keys, true);
+      if (!candidate || !hasUnigrams_(*candidate)) {
+        return std::nullopt;
+      }
+      return candidate;
+    };
+
+    std::optional<size_t> chineseStart;
+    std::optional<std::string> reading = firstToneReadingAt(pendingStart);
+    if (reading) {
+      chineseStart = pendingStart;
+    } else {
+      for (size_t start = raw.size() - 1; start > pendingStart; --start) {
+        size_t candidateStart = start - 1;
+        reading = firstToneReadingAt(candidateStart);
+        if (reading) {
+          chineseStart = candidateStart;
+          break;
+        }
+      }
+      if (!reading && raw.size() > pendingStart) {
+        size_t candidateStart = raw.size() - 1;
+        reading = firstToneReadingAt(candidateStart);
+        if (reading) {
+          chineseStart = candidateStart;
+        }
+      }
+    }
+    if (chineseStart && reading) {
+      appendLiteral(result.segments,
+                    raw.substr(pendingStart, *chineseStart - pendingStart));
+      result.segments.push_back({SegmentKind::kChinese,
+                                 std::string(raw.substr(*chineseStart)),
+                                 *reading});
       return result;
     }
   }
@@ -98,7 +143,8 @@ bool MixedInputSegmenter::IsSupportedAscii(char key) {
 
 bool MixedInputSegmenter::HasStructuralAsciiEvidence(std::string_view raw) {
   size_t consecutiveDigits = 0;
-  for (char key : raw) {
+  for (size_t index = 0; index < raw.size(); ++index) {
+    char key = raw[index];
     unsigned char value = static_cast<unsigned char>(key);
     if (value >= 'A' && value <= 'Z') {
       return true;
@@ -107,7 +153,6 @@ bool MixedInputSegmenter::HasStructuralAsciiEvidence(std::string_view raw) {
     switch (key) {
       case '@':
       case '.':
-      case '/':
       case '\\':
       case '_':
       case '+':
@@ -117,6 +162,13 @@ bool MixedInputSegmenter::HasStructuralAsciiEvidence(std::string_view raw) {
         return true;
       default:
         break;
+    }
+
+    // Slash is also the Standard Bopomofo key for ㄥ; only treat it as
+    // structural ASCII when it participates in a URL scheme separator.
+    if (key == ':' && index + 2 < raw.size() && raw[index + 1] == '/' &&
+        raw[index + 2] == '/') {
+      return true;
     }
 
     if (value >= '0' && value <= '9') {
@@ -160,9 +212,14 @@ std::optional<std::string> MixedInputSegmenter::strictReading(
     return std::nullopt;
   }
 
-  // The normal reading buffer permits later keys to overwrite a component.
-  // A strict candidate must instead round-trip to the exact canonical order.
-  if (layout->keySequenceFromSyllable(syllable) != sequence) {
+  // McBopomofo intentionally accepts component keys in a non-canonical order
+  // (for example, both 5j;4 and 5;j4 form ㄓㄨㄤˋ). Keep the parser strict by
+  // requiring the exact same component-key multiset after normalization. This
+  // accepts reordering while rejecting overwritten or duplicate components.
+  std::string normalized = layout->keySequenceFromSyllable(syllable);
+  std::sort(sequence.begin(), sequence.end());
+  std::sort(normalized.begin(), normalized.end());
+  if (normalized != sequence) {
     return std::nullopt;
   }
 

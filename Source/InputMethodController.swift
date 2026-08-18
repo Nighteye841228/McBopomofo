@@ -408,9 +408,9 @@ extension McBopomofoInputMethodController {
             handle(state: newState, previous: previous, client: client)
         case let newState as InputState.Marking:
             handle(state: newState, previous: previous, client: client)
-        case let newState as InputState.ChoosingCandidate:
-            handle(state: newState, previous: previous, client: client)
         case let newState as InputState.ChoosingMixedInputCandidate:
+            handle(state: newState, previous: previous, client: client)
+        case let newState as InputState.ChoosingCandidate:
             handle(state: newState, previous: previous, client: client)
         case let newState as InputState.AssociatedPhrases:
             handle(state: newState, previous: previous, client: client)
@@ -801,10 +801,10 @@ extension McBopomofoInputMethodController {
             var useVerticalMode = false
             var candidates: [InputState.Candidate] = []
             switch state {
-            case let state as InputState.ChoosingCandidate:
+            case let state as InputState.ChoosingMixedInputCandidate:
                 useVerticalMode = state.useVerticalMode
                 candidates = state.candidates
-            case let state as InputState.ChoosingMixedInputCandidate:
+            case let state as InputState.ChoosingCandidate:
                 useVerticalMode = state.useVerticalMode
                 candidates = state.candidates
             case let state as InputState.AssociatedPhrasesPlain:

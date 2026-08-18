@@ -48,45 +48,84 @@ enum LocalMain {
         }
         LanguageModelManager.loadDataModels()
         let savedMixedInputEnabled = Preferences.mixedInputEnabled
+        let savedPersonalizationEnabled = Preferences.mixedInputPersonalizationEnabled
         let savedKeyboardLayout = Preferences.keyboardLayout
         let savedAssociatedPhrasesEnabled = Preferences.associatedPhrasesEnabled
         defer {
             Preferences.mixedInputEnabled = savedMixedInputEnabled
+            Preferences.mixedInputPersonalizationEnabled = savedPersonalizationEnabled
             Preferences.keyboardLayout = savedKeyboardLayout
             Preferences.associatedPhrasesEnabled = savedAssociatedPhrasesEnabled
         }
         Preferences.mixedInputEnabled = true
+        Preferences.mixedInputPersonalizationEnabled = false
         Preferences.keyboardLayout = .standard
         Preferences.associatedPhrasesEnabled = false
 
-        let handler = KeyHandler()
-        handler.inputMode = .bopomofo
-        handler.syncWithPreferences()
-        var state: InputState = InputState.Empty()
-        var inputError = false
-        for key in "ji3vu04y94callsu3" {
-            let text = String(key)
-            let charCode = text.utf16.first ?? 0
-            let input = KeyHandlerInput(
-                inputText: text, keyCode: 0, charCode: charCode, flags: [],
-                isVerticalMode: false)
-            let handled = handler.handle(
-                input: input, state: state,
-                stateCallback: { state = $0 },
-                errorCallback: { inputError = true })
-            if !handled || inputError {
-                fputs("KeyHandler rejected mixed-input self-check\n", stderr)
-                return 11
+        func evaluate(_ keys: String) -> String? {
+            let handler = KeyHandler()
+            handler.inputMode = .bopomofo
+            handler.syncWithPreferences()
+            var state: InputState = InputState.Empty()
+            var inputError = false
+            for key in keys {
+                let text = String(key)
+                let charCode = text.utf16.first ?? 0
+                let input = KeyHandlerInput(
+                    inputText: text, keyCode: 0, charCode: charCode, flags: [],
+                    isVerticalMode: false)
+                let handled = handler.handle(
+                    input: input, state: state,
+                    stateCallback: { state = $0 },
+                    errorCallback: { inputError = true })
+                if !handled || inputError {
+                    return nil
+                }
             }
+            return (state as? InputState.Inputting)?.composingBuffer
         }
-        guard let inputting = state as? InputState.Inputting,
-            inputting.composingBuffer == "我現在call你"
-        else {
-            let actual = (state as? InputState.Inputting)?.composingBuffer ?? "<not inputting>"
+
+        let coreInput = "ji3vu04y94callsu3"
+        guard evaluate(coreInput) == "我現在call你" else {
+            let actual = evaluate(coreInput) ?? "<not inputting>"
             fputs("Unexpected mixed-input result: \(actual)\n", stderr)
             return 12
         }
-        print("McBopomofo local build self-check passed: \(inputting.composingBuffer)")
+        let reportInput = "fu062j0 dashboardm3g6u04y xul4g4rm,6cj84r,u4au04interfaced9 z8 "
+        let reportExpected = "前端dashboard與實驗資料視覺化介面interface開發"
+        guard evaluate(reportInput) == reportExpected else {
+            let actual = evaluate(reportInput) ?? "<not inputting>"
+            fputs("Unexpected report sentence result: \(actual)\n", stderr)
+            return 13
+        }
+
+        let candidateHandler = KeyHandler()
+        candidateHandler.inputMode = .bopomofo
+        candidateHandler.syncWithPreferences()
+        var candidateState: InputState = InputState.Empty()
+        for key in "m3" {
+            let text = String(key)
+            let input = KeyHandlerInput(
+                inputText: text, keyCode: 0, charCode: text.utf16.first ?? 0,
+                flags: [], isVerticalMode: false)
+            _ = candidateHandler.handle(
+                input: input, state: candidateState,
+                stateCallback: { candidateState = $0 }, errorCallback: {})
+        }
+        let down = KeyHandlerInput(
+            inputText: " ", keyCode: 125, charCode: 0, flags: [], isVerticalMode: false)
+        _ = candidateHandler.handle(
+            input: down, state: candidateState,
+            stateCallback: { candidateState = $0 }, errorCallback: {})
+        guard let choosing = candidateState as? InputState.ChoosingMixedInputCandidate,
+            choosing.englishCandidateIndex == 1,
+            choosing.candidates.count > 1,
+            choosing.candidates[1].value == "m3"
+        else {
+            fputs("Mixed candidate list did not preserve the original candidates\n", stderr)
+            return 14
+        }
+        print("McBopomofo local build self-check passed: \(reportExpected)")
         return 0
     }
 
