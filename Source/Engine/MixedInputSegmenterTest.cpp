@@ -24,8 +24,9 @@ class MixedInputSegmenterTest : public ::testing::Test {
   }
 
   std::set<std::string> readings = {"ㄋㄧˇ", "ㄨㄛ", "ㄨㄛˇ", "ㄧㄡˇ", "ㄐㄧㄡˋ",
-                                    "ㄐㄧˋ", "ㄇˇ", "ㄒㄧㄢˋ", "ㄗㄞˋ",
-                                    "ㄓㄨㄥ", "ㄨㄣˊ"};
+                                    "ㄅㄢˋ", "ㄉㄞˇ", "ㄉㄚˋ", "ㄓㄚˋ", "ㄚˋ",
+                                    "ㄓㄚ", "ㄚ", "ㄐㄧˋ", "ㄇˇ", "ㄒㄧㄢˋ",
+                                    "ㄗㄞˋ", "ㄓㄨㄥ", "ㄨㄣˊ"};
 };
 
 TEST_F(MixedInputSegmenterTest, KeepsInvalidBopomofoAsLiteral) {
@@ -129,6 +130,41 @@ TEST_F(MixedInputSegmenterTest, PeriodAloneIsNotStructuralAsciiEvidence) {
   auto jiu = makeSegmenter().segment("ru.4");
   EXPECT_EQ(jiu.segments,
             (std::vector<Segment>{{Kind::kChinese, "ru.4", "ㄐㄧㄡˋ"}}));
+}
+
+TEST_F(MixedInputSegmenterTest, NumericSyllablesOverrideAsciiEvidence) {
+  const std::vector<Segment> expected = {
+      {Kind::kChinese, "104", "ㄅㄢˋ"},
+      {Kind::kChinese, "293", "ㄉㄞˇ"},
+      {Kind::kChinese, "284", "ㄉㄚˋ"},
+      {Kind::kChinese, "584", "ㄓㄚˋ"},
+  };
+  for (const Segment& segment : expected) {
+    SCOPED_TRACE(segment.raw);
+    EXPECT_TRUE(MixedInputSegmenter::HasStructuralAsciiEvidence(segment.raw));
+    auto result = makeSegmenter().segment(segment.raw);
+    EXPECT_FALSE(result.protectedAscii);
+    EXPECT_EQ(result.segments, (std::vector<Segment>{segment}));
+  }
+}
+
+TEST_F(MixedInputSegmenterTest, CompleteSyllableWinsOverSharedRhyme) {
+  auto fourthTone = makeSegmenter().segment("584");
+  EXPECT_EQ(fourthTone.segments,
+            (std::vector<Segment>{{Kind::kChinese, "584", "ㄓㄚˋ"}}));
+
+  auto firstTone = makeSegmenter().segment("58", Boundary::kSpace);
+  EXPECT_EQ(firstTone.segments,
+            (std::vector<Segment>{{Kind::kChinese, "58", "ㄓㄚ"}}));
+}
+
+TEST_F(MixedInputSegmenterTest, MissingCompleteReadingDoesNotUseSharedRhyme) {
+  MixedInputSegmenter rhymeOnly([](const std::string& reading) {
+    return reading == "ㄚˋ";
+  });
+  auto result = rhymeOnly.segment("584");
+  EXPECT_EQ(result.segments,
+            (std::vector<Segment>{{Kind::kLiteral, "584", ""}}));
 }
 
 TEST_F(MixedInputSegmenterTest, EnterDoesNotCompleteFirstTone) {

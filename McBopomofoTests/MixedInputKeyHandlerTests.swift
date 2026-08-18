@@ -147,6 +147,11 @@ final class MixedInputKeyHandlerTests: XCTestCase {
         XCTAssertEqual(composingBuffer, "有就")
     }
 
+    func testAllNumericBopomofoSyllablesAreNotProtectedAscii() {
+        sendKeys("104293284584")
+        XCTAssertEqual(composingBuffer, "辦逮大炸")
+    }
+
     func testSyllableCanStartWithPunctuationPositionKey() {
         sendKeys(".u3")
         XCTAssertEqual(composingBuffer, "有")

@@ -28,6 +28,15 @@ MixedInputSegmenter::Result MixedInputSegmenter::segment(
     return result;
   }
 
+  bool completesFirstTone = boundary == Boundary::kSpace;
+  std::optional<std::string> exactReading =
+      strictReading(raw, completesFirstTone);
+  if (exactReading && hasUnigrams_(*exactReading)) {
+    result.segments.push_back(
+        {SegmentKind::kChinese, std::string(raw), *exactReading});
+    return result;
+  }
+
   if (HasStructuralAsciiEvidence(raw)) {
     result.protectedAscii = true;
     appendLiteral(result.segments, raw);
@@ -51,9 +60,22 @@ MixedInputSegmenter::Result MixedInputSegmenter::segment(
     };
 
     std::optional<size_t> chineseStart;
-    std::optional<std::string> reading = readingAt(pendingStart);
+    std::string_view wholeKeys =
+        raw.substr(pendingStart, toneIndex - pendingStart + 1);
+    std::optional<std::string> wholeReading = strictReading(wholeKeys, false);
+    std::optional<std::string> reading;
+    if (wholeReading && hasUnigrams_(*wholeReading)) {
+      reading = wholeReading;
+    }
     if (reading) {
       chineseStart = pendingStart;
+    } else if (wholeReading) {
+      // The complete key sequence is a structurally valid syllable, but it is
+      // not in the language model. Keep the entire sequence literal instead
+      // of dropping its onset and interpreting only a shared rhyme.
+      appendLiteral(result.segments, wholeKeys);
+      pendingStart = toneIndex + 1;
+      continue;
     } else {
       // Prefer the shortest suffix with at least two phonetic components, then
       // fall back to a one-component syllable such as m3 (ㄩˇ). This keeps the
@@ -102,9 +124,18 @@ MixedInputSegmenter::Result MixedInputSegmenter::segment(
     };
 
     std::optional<size_t> chineseStart;
-    std::optional<std::string> reading = firstToneReadingAt(pendingStart);
+    std::optional<std::string> wholeReading = strictReading(tail, true);
+    std::optional<std::string> reading;
+    if (wholeReading && hasUnigrams_(*wholeReading)) {
+      reading = wholeReading;
+    }
     if (reading) {
       chineseStart = pendingStart;
+    } else if (wholeReading) {
+      // As with explicit tones, never reinterpret a valid complete syllable
+      // as a literal onset followed by a shorter first-tone rhyme.
+      appendLiteral(result.segments, tail);
+      return result;
     } else {
       for (size_t start = raw.size() - 1; start > pendingStart; --start) {
         size_t candidateStart = start - 1;
