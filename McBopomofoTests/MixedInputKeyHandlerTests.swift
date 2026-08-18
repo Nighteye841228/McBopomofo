@@ -113,6 +113,36 @@ final class MixedInputKeyHandlerTests: XCTestCase {
         XCTAssertEqual(composingBuffer, "我C")
     }
 
+    func testShiftLetterStartsIndependentTokenBeforeChinese() {
+        XCTAssertTrue(send("A", flags: .shift))
+        sendKeys("gk4jp6")
+        XCTAssertEqual(composingBuffer, "A社文")
+    }
+
+    func testShiftLetterAfterChineseDoesNotJoinItsToken() {
+        sendKeys("gk4")
+        XCTAssertTrue(send("A", flags: .shift))
+        XCTAssertEqual(composingBuffer, "射A")
+    }
+
+    func testConsecutiveShiftLettersDoNotInsertSpaces() {
+        XCTAssertTrue(send("A", flags: .shift))
+        XCTAssertTrue(send("B", flags: .shift))
+        XCTAssertEqual(composingBuffer, "AB")
+    }
+
+    func testCapsLockLetterUsesTheSameEnglishBoundary() {
+        XCTAssertTrue(send("a", flags: .capsLock))
+        sendKeys("gk4jp6")
+        XCTAssertEqual(composingBuffer, "A社文")
+    }
+
+    func testBackspaceRemovesDirectShiftLetter() {
+        XCTAssertTrue(send("A", flags: .shift))
+        XCTAssertTrue(send("\u{8}"))
+        XCTAssertEqual(composingBuffer, "")
+    }
+
     func testBackspaceDeletesPendingAsciiOneCharacterAtATime() {
         sendKeys("call")
         XCTAssertTrue(send("\u{8}"))

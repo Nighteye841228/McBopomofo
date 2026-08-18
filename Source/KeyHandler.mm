@@ -733,11 +733,27 @@ bool MixedResultIsExactChinese(const McBopomofo::MixedInputSegmenter::Result& re
         return NO;
     }
 
-    if ((input.isShiftHold || input.isCapsLockOn) && isLetter &&
-        !_mixedInputPending.empty()) {
-        [self _flushMixedInputWithBoundary:McBopomofo::MixedInputSegmenter::Boundary::kEnter
-                              appendSpace:NO
-                           interpretation:MixedInputInterpretation::kAutomatic];
+    bool explicitEnglishLetter = (input.isShiftHold || input.isCapsLockOn) && isLetter;
+    if (explicitEnglishLetter) {
+        if (!_mixedInputPending.empty()) {
+            [self _flushMixedInputWithBoundary:McBopomofo::MixedInputSegmenter::Boundary::kEnter
+                                  appendSpace:NO
+                               interpretation:MixedInputInterpretation::kAutomatic];
+        }
+        if (_mixedInputDeferredSpace) {
+            [self _resolveMixedInputDeferredSpaceAsEnglish:
+                      _mixedInputDeferredSpace->rollbackOnEnglish];
+        }
+
+        char uppercase = (char)std::toupper(static_cast<unsigned char>(charCode));
+        std::string literal = _mixedLanguageModel->registerLiteral(std::string(1, uppercase));
+        _grid->insertReading(literal);
+        _mixedInputLastRaw.clear();
+        _mixedInputLastReadingIndex.reset();
+        _mixedInputLastBoundaryWasSpace = false;
+        [self _walk];
+        stateCallback([self buildInputtingState]);
+        return YES;
     }
 
     if (_mixedInputPending.size() >= 64) {
@@ -747,9 +763,6 @@ bool MixedResultIsExactChinese(const McBopomofo::MixedInputSegmenter::Result& re
     }
 
     char value = (char)charCode;
-    if ((input.isShiftHold || input.isCapsLockOn) && isLetter) {
-        value = (char)std::toupper(static_cast<unsigned char>(value));
-    }
     if (_mixedInputPending.empty()) {
         _mixedInputLastRaw.clear();
         _mixedInputLastReadingIndex.reset();

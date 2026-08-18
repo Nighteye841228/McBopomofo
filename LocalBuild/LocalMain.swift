@@ -62,17 +62,16 @@ enum LocalMain {
         Preferences.keyboardLayout = .standard
         Preferences.associatedPhrasesEnabled = false
 
-        func evaluate(_ keys: String) -> String? {
+        func evaluateInputs(_ inputs: [(String, NSEvent.ModifierFlags)]) -> String? {
             let handler = KeyHandler()
             handler.inputMode = .bopomofo
             handler.syncWithPreferences()
             var state: InputState = InputState.Empty()
             var inputError = false
-            for key in keys {
-                let text = String(key)
+            for (text, flags) in inputs {
                 let charCode = text.utf16.first ?? 0
                 let input = KeyHandlerInput(
-                    inputText: text, keyCode: 0, charCode: charCode, flags: [],
+                    inputText: text, keyCode: 0, charCode: charCode, flags: flags,
                     isVerticalMode: false)
                 let handled = handler.handle(
                     input: input, state: state,
@@ -85,11 +84,29 @@ enum LocalMain {
             return (state as? InputState.Inputting)?.composingBuffer
         }
 
+        func evaluate(_ keys: String) -> String? {
+            evaluateInputs(keys.map { (String($0), NSEvent.ModifierFlags()) })
+        }
+
         let coreInput = "ji3vu04y94callsu3"
         guard evaluate(coreInput) == "我現在call你" else {
             let actual = evaluate(coreInput) ?? "<not inputting>"
             fputs("Unexpected mixed-input result: \(actual)\n", stderr)
             return 12
+        }
+        let shiftedPrefix = evaluateInputs([
+            ("A", .shift), ("g", []), ("k", []), ("4", []),
+            ("j", []), ("p", []), ("6", []),
+        ])
+        let shiftedSuffix = evaluateInputs([
+            ("g", []), ("k", []), ("4", []), ("A", .shift),
+        ])
+        guard shiftedPrefix == "A社文", shiftedSuffix == "社A" else {
+            fputs(
+                "Shift-letter boundary regression failed: prefix=\(shiftedPrefix ?? "<nil>"), "
+                    + "suffix=\(shiftedSuffix ?? "<nil>")\n",
+                stderr)
+            return 19
         }
         let reportInput = "fu062j0 dashboardm3g6u04y xul4g4rm,6cj84r,u4au04interfaced9 z8 "
         let reportExpected = "前端dashboard與實驗資料視覺化介面interface開發"
