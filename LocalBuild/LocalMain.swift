@@ -107,6 +107,20 @@ enum LocalMain {
             fputs("Numeric Bopomofo regression failed: \(actual)\n", stderr)
             return 17
         }
+        let spacedEnglish = "hello world "
+        let spacedActual = evaluate(spacedEnglish)
+        let ambiguousActual = evaluate("ai model ")
+        let strongActual = evaluate("g0 dashboard model")
+        guard spacedActual == spacedEnglish, ambiguousActual == "ai model ",
+            strongActual == "山dashboard model"
+        else {
+            fputs(
+                "Deferred-space regression failed: spaced=\(spacedActual ?? "<nil>"), "
+                    + "ambiguous=\(ambiguousActual ?? "<nil>"), "
+                    + "strong=\(strongActual ?? "<nil>")\n",
+                stderr)
+            return 18
+        }
 
         let candidateHandler = KeyHandler()
         candidateHandler.inputMode = .bopomofo

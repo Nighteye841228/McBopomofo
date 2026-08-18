@@ -152,6 +152,29 @@ final class MixedInputKeyHandlerTests: XCTestCase {
         XCTAssertEqual(composingBuffer, "辦逮大炸")
     }
 
+    func testEnglishWordsPreserveLiteralSpaces() {
+        sendKeys("hello world ")
+        XCTAssertEqual(composingBuffer, "hello world ")
+    }
+
+    func testAmbiguousFirstToneRollsBackBeforeEnglishToken() {
+        sendKeys("ai model ")
+        XCTAssertEqual(composingBuffer, "ai model ")
+    }
+
+    func testStrongChineseFirstToneRemainsBeforeEnglishToken() {
+        sendKeys("g0 dashboard model")
+        XCTAssertEqual(composingBuffer, "山dashboard model")
+    }
+
+    func testSelectingEnglishFirstToneAlternativeRestoresSpace() {
+        sendKeys("ai")
+        XCTAssertTrue(send(" "))
+        XCTAssertTrue(sendDown())
+        state = handler.applyMixedInputCandidate(useEnglish: true)
+        XCTAssertEqual(composingBuffer, "ai ")
+    }
+
     func testSyllableCanStartWithPunctuationPositionKey() {
         sendKeys(".u3")
         XCTAssertEqual(composingBuffer, "有")

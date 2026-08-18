@@ -58,6 +58,29 @@ enum class MixedInputInterpretation {
     kEnglish,
 };
 
+struct MixedInputDeferredSpace {
+    std::string raw;
+    std::vector<std::string> readings;
+    size_t readingStart;
+    bool rollbackOnEnglish;
+    bool rollbackOnHardBoundary;
+};
+
+bool MixedResultHasChinese(const McBopomofo::MixedInputSegmenter::Result& result)
+{
+    return std::any_of(result.segments.begin(), result.segments.end(), [](const auto& segment) {
+        return segment.kind == McBopomofo::MixedInputSegmenter::SegmentKind::kChinese;
+    });
+}
+
+bool MixedResultIsExactChinese(const McBopomofo::MixedInputSegmenter::Result& result,
+    const std::string& raw)
+{
+    return result.segments.size() == 1 &&
+        result.segments[0].kind == McBopomofo::MixedInputSegmenter::SegmentKind::kChinese &&
+        result.segments[0].raw == raw;
+}
+
 @implementation KeyHandler {
     std::shared_ptr<Formosa::Gramambular2::LanguageModel> _emptySharedPtr;
 
@@ -71,6 +94,8 @@ enum class MixedInputInterpretation {
     std::string _mixedInputPending;
     std::string _mixedInputLastRaw;
     std::optional<size_t> _mixedInputLastReadingIndex;
+    bool _mixedInputLastBoundaryWasSpace;
+    std::optional<MixedInputDeferredSpace> _mixedInputDeferredSpace;
 
     // user override model
     McBopomofo::UserOverrideModel *_userOverrideModel;
@@ -129,6 +154,8 @@ enum class MixedInputInterpretation {
         _mixedInputPending.clear();
         _mixedInputLastRaw.clear();
         _mixedInputLastReadingIndex.reset();
+        _mixedInputLastBoundaryWasSpace = false;
+        _mixedInputDeferredSpace.reset();
 
         if (!_bpmfReadingBuffer->isEmpty()) {
             _bpmfReadingBuffer->clear();
@@ -331,6 +358,8 @@ enum class MixedInputInterpretation {
     _mixedInputPending.clear();
     _mixedInputLastRaw.clear();
     _mixedInputLastReadingIndex.reset();
+    _mixedInputLastBoundaryWasSpace = false;
+    _mixedInputDeferredSpace.reset();
     _grid->clear();
     _mixedLanguageModel->clearLiterals();
     _latestWalk = Formosa::Gramambular2::ReadingGrid::WalkResult {};
@@ -374,6 +403,51 @@ enum class MixedInputInterpretation {
         }
     }
     return NO;
+}
+
+- (BOOL)_gridContainsChineseReading
+{
+    for (const auto& reading : _grid->readings()) {
+        if (!_mixedLanguageModel->isLiteralReading(reading)) {
+            return YES;
+        }
+    }
+    return NO;
+}
+
+- (void)_resolveMixedInputDeferredSpaceAsEnglish:(BOOL)useEnglish
+{
+    if (!_mixedInputDeferredSpace) {
+        return;
+    }
+
+    const MixedInputDeferredSpace deferred = *_mixedInputDeferredSpace;
+    _mixedInputDeferredSpace.reset();
+    if (!useEnglish || deferred.readings.empty() ||
+        deferred.readingStart + deferred.readings.size() > _grid->length()) {
+        return;
+    }
+
+    for (size_t index = 0; index < deferred.readings.size(); ++index) {
+        if (_grid->readings()[deferred.readingStart + index] != deferred.readings[index]) {
+            return;
+        }
+    }
+
+    _grid->setCursor(deferred.readingStart + deferred.readings.size());
+    for (size_t index = 0; index < deferred.readings.size(); ++index) {
+        _grid->deleteReadingBeforeCursor();
+    }
+    for (char value : deferred.raw) {
+        std::string literal = _mixedLanguageModel->registerLiteral(std::string(1, value));
+        _grid->insertReading(literal);
+    }
+    std::string space = _mixedLanguageModel->registerLiteral(" ");
+    _grid->insertReading(space);
+    _mixedInputLastRaw.clear();
+    _mixedInputLastReadingIndex.reset();
+    _mixedInputLastBoundaryWasSpace = false;
+    [self _walk];
 }
 
 - (NSString *)_mixedInputPreview
@@ -425,15 +499,45 @@ enum class MixedInputInterpretation {
     std::string raw = _mixedInputPending;
     McBopomofo::MixedInputSegmenter::Result result =
         _mixedInputSegmenter->segment(raw, boundary);
+    bool exactChinese = MixedResultIsExactChinese(result, raw);
+    bool hasChinese = MixedResultHasChinese(result);
+    bool endsInChinese = !result.segments.empty() &&
+        result.segments.back().kind == McBopomofo::MixedInputSegmenter::SegmentKind::kChinese;
+    bool currentLooksEnglish = boundary == McBopomofo::MixedInputSegmenter::Boundary::kSpace
+        ? !exactChinese
+        : !hasChinese;
+    if (_mixedInputDeferredSpace) {
+        bool deferredRawIsLettersOnly = std::all_of(
+            _mixedInputDeferredSpace->raw.begin(), _mixedInputDeferredSpace->raw.end(), [](char value) {
+                return std::isalpha(static_cast<unsigned char>(value));
+            });
+        bool rollback = currentLooksEnglish &&
+            (_mixedInputDeferredSpace->rollbackOnEnglish || deferredRawIsLettersOnly);
+        [self _resolveMixedInputDeferredSpaceAsEnglish:rollback];
+    }
+
+    bool priorHasLiteral = [self _gridContainsMixedLiteral];
+    bool priorHasChinese = [self _gridContainsChineseReading];
+    bool rawIsLettersOnly = std::all_of(raw.begin(), raw.end(), [](char value) {
+        return std::isalpha(static_cast<unsigned char>(value));
+    });
     bool useEnglish = interpretation == MixedInputInterpretation::kEnglish;
     if (interpretation == MixedInputInterpretation::kAutomatic) {
         useEnglish =
             [MixedInputPersonalization preferenceForRawInput:@(raw.c_str())
                                                     boundary:@"candidate"] == MixedInputPreferenceEnglish;
     }
+    bool priorWasEnglishOnly = priorHasLiteral && !priorHasChinese;
+    if (boundary == McBopomofo::MixedInputSegmenter::Boundary::kSpace &&
+        (!hasChinese || (!exactChinese && priorWasEnglishOnly) ||
+            (rawIsLettersOnly && !exactChinese && priorHasChinese))) {
+        useEnglish = true;
+    }
 
+    size_t insertedReadingStart = _grid->cursor();
     _mixedInputLastRaw.clear();
     _mixedInputLastReadingIndex.reset();
+    _mixedInputLastBoundaryWasSpace = false;
     if (useEnglish) {
         for (char value : raw) {
             std::string literal = _mixedLanguageModel->registerLiteral(std::string(1, value));
@@ -455,17 +559,31 @@ enum class MixedInputInterpretation {
         }
     }
 
-    bool spaceCompletedFirstTone = false;
-    if (!useEnglish && boundary == McBopomofo::MixedInputSegmenter::Boundary::kSpace &&
-        !result.segments.empty()) {
-        const auto& last = result.segments.back();
-        spaceCompletedFirstTone =
-            last.kind == McBopomofo::MixedInputSegmenter::SegmentKind::kChinese;
-    }
+    bool spaceCompletedFirstTone = !useEnglish &&
+        boundary == McBopomofo::MixedInputSegmenter::Boundary::kSpace && endsInChinese;
 
     if (appendSpace && !spaceCompletedFirstTone) {
         std::string literal = _mixedLanguageModel->registerLiteral(" ");
         _grid->insertReading(literal);
+    }
+
+    if (spaceCompletedFirstTone && _mixedInputLastReadingIndex &&
+        _grid->cursor() > insertedReadingStart) {
+        bool rawIsLettersOnly = std::all_of(raw.begin(), raw.end(), [](char value) {
+            return std::isalpha(static_cast<unsigned char>(value));
+        });
+        std::vector<std::string> insertedReadings(
+            _grid->readings().begin() + static_cast<ptrdiff_t>(insertedReadingStart),
+            _grid->readings().begin() + static_cast<ptrdiff_t>(_grid->cursor()));
+        _mixedInputDeferredSpace = MixedInputDeferredSpace {
+            raw,
+            insertedReadings,
+            insertedReadingStart,
+            !exactChinese || priorWasEnglishOnly ||
+                (!priorHasLiteral && !priorHasChinese && rawIsLettersOnly),
+            priorWasEnglishOnly || (!exactChinese && !priorHasChinese),
+        };
+        _mixedInputLastBoundaryWasSpace = true;
     }
 
     _mixedInputPending.clear();
@@ -491,11 +609,17 @@ enum class MixedInputInterpretation {
                 std::string literal = _mixedLanguageModel->registerLiteral(std::string(1, value));
                 _grid->insertReading(literal);
             }
+            if (_mixedInputLastBoundaryWasSpace) {
+                std::string space = _mixedLanguageModel->registerLiteral(" ");
+                _grid->insertReading(space);
+            }
             [self _walk];
         }
     }
     _mixedInputLastRaw.clear();
     _mixedInputLastReadingIndex.reset();
+    _mixedInputLastBoundaryWasSpace = false;
+    _mixedInputDeferredSpace.reset();
     return [self buildInputtingState];
 }
 
@@ -521,6 +645,14 @@ enum class MixedInputInterpretation {
         std::string legacyKeys = _bpmfReadingBuffer->standardLayoutQueryString();
         _mixedInputPending.insert(0, legacyKeys);
         _bpmfReadingBuffer->clear();
+    }
+    if (charCode == 13 && _mixedInputPending.empty() && _mixedInputDeferredSpace) {
+        [self _resolveMixedInputDeferredSpaceAsEnglish:
+                  _mixedInputDeferredSpace->rollbackOnHardBoundary];
+    }
+    if ((charCode == 27 || charCode == 8) && _mixedInputPending.empty() &&
+        _mixedInputDeferredSpace) {
+        [self _resolveMixedInputDeferredSpaceAsEnglish:NO];
     }
     if (charCode == 27 && !_mixedInputPending.empty()) {
         _mixedInputPending.clear();
@@ -555,6 +687,9 @@ enum class MixedInputInterpretation {
     BOOL isNavigationKey = input.isCursorForward || input.isCursorBackward ||
         input.isHome || input.isEnd || input.isDelete || input.isExtraChooseCandidateKey ||
         input.isAbsorbedArrowKey || input.isTab;
+    if (isNavigationKey && _mixedInputPending.empty() && _mixedInputDeferredSpace) {
+        [self _resolveMixedInputDeferredSpaceAsEnglish:NO];
+    }
     if (isNavigationKey && !_mixedInputPending.empty()) {
         [self _flushMixedInputWithBoundary:McBopomofo::MixedInputSegmenter::Boundary::kEnter
                               appendSpace:NO
@@ -564,6 +699,7 @@ enum class MixedInputInterpretation {
     }
 
     if (input.isCommandHold || input.isOptionHold || input.isControlHold || input.isNumericPad) {
+        [self _resolveMixedInputDeferredSpaceAsEnglish:NO];
         return NO;
     }
 
@@ -575,6 +711,7 @@ enum class MixedInputInterpretation {
         return YES;
     }
     if (charCode == 32 && [state isKindOfClass:[InputStateInputting class]]) {
+        [self _resolveMixedInputDeferredSpaceAsEnglish:NO];
         std::string literal = _mixedLanguageModel->registerLiteral(" ");
         _grid->insertReading(literal);
         [self _walk];
@@ -583,6 +720,7 @@ enum class MixedInputInterpretation {
     }
 
     if (charCode >= 0x80 || !McBopomofo::MixedInputSegmenter::IsSupportedAscii((char)charCode)) {
+        [self _resolveMixedInputDeferredSpaceAsEnglish:NO];
         return NO;
     }
 
@@ -591,6 +729,7 @@ enum class MixedInputInterpretation {
     bool startsOrContinuesToken = !_mixedInputPending.empty() || input.isCapsLockOn ||
         isLetter || isBopomofoKey;
     if (!startsOrContinuesToken) {
+        [self _resolveMixedInputDeferredSpaceAsEnglish:NO];
         return NO;
     }
 
@@ -614,6 +753,7 @@ enum class MixedInputInterpretation {
     if (_mixedInputPending.empty()) {
         _mixedInputLastRaw.clear();
         _mixedInputLastReadingIndex.reset();
+        _mixedInputLastBoundaryWasSpace = false;
     }
     _mixedInputPending.push_back(value);
     if (value == '3' || value == '4' || value == '6' || value == '7') {
