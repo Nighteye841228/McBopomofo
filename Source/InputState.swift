@@ -540,6 +540,7 @@ class InputState: NSObject {
         @objc private(set) var candidates: [Candidate]
         @objc private(set) var useVerticalMode: Bool
         @objc var originalCursorIndex: UInt
+        @objc var candidateCursorIndex: UInt
 
         @objc init(
             composingBuffer: String, cursorIndex: UInt, candidates: [Candidate],
@@ -548,6 +549,7 @@ class InputState: NSObject {
             self.candidates = candidates
             self.useVerticalMode = useVerticalMode
             self.originalCursorIndex = cursorIndex
+            self.candidateCursorIndex = cursorIndex > 0 ? cursorIndex - 1 : 0
             super.init(composingBuffer: composingBuffer, cursorIndex: cursorIndex)
         }
 
@@ -597,6 +599,7 @@ class InputState: NSObject {
                 candidates: candidates,
                 useVerticalMode: choosingCandidate.useVerticalMode)
             originalCursorIndex = choosingCandidate.originalCursorIndex
+            candidateCursorIndex = choosingCandidate.candidateCursorIndex
         }
 
         override var description: String {

@@ -172,6 +172,34 @@ final class MixedInputKeyHandlerTests: XCTestCase {
         XCTAssertEqual(composingBuffer, "a3")
     }
 
+    func testSelectingChineseAlternativeMovesToNextReading() {
+        let oldMoveCursor = Preferences.moveCursorAfterSelectingCandidate
+        defer { Preferences.moveCursorAfterSelectingCandidate = oldMoveCursor }
+        Preferences.moveCursorAfterSelectingCandidate = true
+
+        sendKeys("a3")
+        XCTAssertTrue(sendDown())
+        guard let choosing = state as? InputState.ChoosingMixedInputCandidate else {
+            return XCTFail("Expected mixed candidate state, got \(state)")
+        }
+        let chineseIndex = choosing.englishCandidateIndex == 0 ? 1 : 0
+        let selected = choosing.candidates[chineseIndex]
+        handler.applyMixedInputCandidate(useEnglish: false)
+        handler.fixNode(
+            reading: selected.reading, value: selected.value,
+            originalCursorIndex: Int(choosing.originalCursorIndex),
+            candidateCursorIndex: Int(choosing.candidateCursorIndex),
+            useMoveCursorAfterSelectionSetting: true)
+        state = handler.buildInputtingState()
+
+        guard let inputting = state as? InputState.Inputting else {
+            return XCTFail("Expected inputting state after selection")
+        }
+        XCTAssertEqual(inputting.cursorIndex, 1)
+        XCTAssertTrue(send("gk4"))
+        XCTAssertTrue(composingBuffer.contains("射"))
+    }
+
     func testAcceptsNonCanonicalBopomofoComponentOrder() {
         sendKeys("5;j4")
         XCTAssertEqual(composingBuffer, "撞")

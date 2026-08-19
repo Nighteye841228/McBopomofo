@@ -65,6 +65,7 @@ extension McBopomofoInputMethodController: CandidateControllerDelegate {
             keyHandler.fixNode(
                 reading: selectedCandidate.reading, value: selectedCandidate.value,
                 originalCursorIndex: Int(state.originalCursorIndex),
+                candidateCursorIndex: Int(state.candidateCursorIndex),
                 useMoveCursorAfterSelectionSetting: true)
             guard let inputting = keyHandler.buildInputtingState() as? InputState.Inputting else {
                 return

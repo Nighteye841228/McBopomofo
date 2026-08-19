@@ -71,6 +71,12 @@ extern InputMode InputModePlainBopomofo;
                                  value:(NSString *)value
                    originalCursorIndex:(size_t)originalCursorIndex
     useMoveCursorAfterSelectionSetting:(BOOL)flag NS_SWIFT_NAME(fixNode(reading:value:originalCursorIndex:useMoveCursorAfterSelectionSetting:));
+- (void)fixNodeWithReading:(NSString *)reading
+                     value:(NSString *)value
+       originalCursorIndex:(size_t)originalCursorIndex
+       candidateCursorIndex:(size_t)candidateCursorIndex
+useMoveCursorAfterSelectionSetting:(BOOL)flag
+    NS_SWIFT_NAME(fixNode(reading:value:originalCursorIndex:candidateCursorIndex:useMoveCursorAfterSelectionSetting:));
 - (void)fixNodeForAssociatedPhraseWithPrefixAt:(size_t)prefixCursorIndex
                                  prefixReading:(NSString *)pfxReading
                                    prefixValue:(NSString *)pfxValue

@@ -243,6 +243,19 @@ bool MixedResultIsExactChinese(const McBopomofo::MixedInputSegmenter::Result& re
 
 - (void)fixNodeWithReading:(NSString *)reading value:(NSString *)value originalCursorIndex:(size_t)originalCursorIndex useMoveCursorAfterSelectionSetting:(BOOL)flag
 {
+    [self fixNodeWithReading:reading
+                       value:value
+         originalCursorIndex:originalCursorIndex
+         candidateCursorIndex:self.actualCandidateCursorIndex
+         useMoveCursorAfterSelectionSetting:flag];
+}
+
+- (void)fixNodeWithReading:(NSString *)reading
+                       value:(NSString *)value
+         originalCursorIndex:(size_t)originalCursorIndex
+         candidateCursorIndex:(size_t)candidateCursorIndex
+  useMoveCursorAfterSelectionSetting:(BOOL)flag
+{
     // Since WalkResult makes references to the current nodes, we must make a
     // copy of the walk that *has a copy* of the current nodes to capture the
     // current state. ReadingGrid::overrideCandidate() changes the state, and
@@ -250,9 +263,9 @@ bool MixedResultIsExactChinese(const McBopomofo::MixedInputSegmenter::Result& re
     // is NOT enough.
     Formosa::Gramambular2::ReadingGrid::WalkResult prevWalk = _latestWalk.copyWithFixedNodes();
 
-    size_t actualCursor = self.actualCandidateCursorIndex;
     Formosa::Gramambular2::ReadingGrid::Candidate candidate(reading.UTF8String, value.UTF8String);
-    if (!_grid->overrideCandidate(actualCursor, candidate)) {
+    if (!_grid->overrideCandidate(candidateCursorIndex, candidate)) {
+        _grid->setCursor(originalCursorIndex);
         return;
     }
 
@@ -260,13 +273,14 @@ bool MixedResultIsExactChinese(const McBopomofo::MixedInputSegmenter::Result& re
 
     // Update the user override model if warranted.
     size_t accumulatedCursor = 0;
-    auto nodeIter = _latestWalk.findNodeAt(actualCursor, &accumulatedCursor);
+    auto nodeIter = _latestWalk.findNodeAt(candidateCursorIndex, &accumulatedCursor);
     if (nodeIter == _latestWalk.nodes.cend()) {
+        _grid->setCursor(originalCursorIndex);
         return;
     }
     Formosa::Gramambular2::ReadingGrid::NodePtr currentNode = *nodeIter;
     if (currentNode != nullptr && currentNode->currentUnigram().score() > -8) {
-        _userOverrideModel->observe(prevWalk, _latestWalk, self.actualCandidateCursorIndex, [NSDate date].timeIntervalSince1970);
+        _userOverrideModel->observe(prevWalk, _latestWalk, candidateCursorIndex, [NSDate date].timeIntervalSince1970);
     }
 
     if (currentNode != nullptr && flag && Preferences.moveCursorAfterSelectingCandidate) {
@@ -3119,6 +3133,7 @@ bool MixedResultIsExactChinese(const McBopomofo::MixedInputSegmenter::Result& re
     }
 
     InputStateChoosingCandidate *state = [[InputStateChoosingCandidate alloc] initWithComposingBuffer:inputting.composingBuffer cursorIndex:inputting.cursorIndex candidates:candidatesArray useVerticalMode:useVerticalMode];
+    state.candidateCursorIndex = self.actualCandidateCursorIndex;
     if (!_mixedInputLastRaw.empty() && _mixedInputLastReadingIndex &&
         *_mixedInputLastReadingIndex == self.actualCandidateCursorIndex &&
         candidatesArray.count > 0) {
