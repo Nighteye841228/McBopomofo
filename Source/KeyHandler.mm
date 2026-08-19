@@ -284,7 +284,18 @@ bool MixedResultIsExactChinese(const McBopomofo::MixedInputSegmenter::Result& re
     }
 
     if (currentNode != nullptr && flag && Preferences.moveCursorAfterSelectingCandidate) {
-        _grid->setCursor(accumulatedCursor);
+        size_t nextCursor = accumulatedCursor;
+        // In the default Hanin-style mode, candidates are taken from the
+        // reading before the cursor. Merely moving to the end of the selected
+        // node would therefore select the same node again. Move one more
+        // reading forward so the next candidate request targets the following
+        // Chinese node. In MS IME-style mode, candidates are taken after the
+        // cursor, so the node end is already the correct next position.
+        if (!Preferences.selectPhraseAfterCursorAsCandidate &&
+            nextCursor < _grid->length()) {
+            ++nextCursor;
+        }
+        _grid->setCursor(nextCursor);
     } else {
         _grid->setCursor(originalCursorIndex);
     }

@@ -1309,6 +1309,76 @@ class KeyHandlerBopomofoTests: XCTestCase {
         Preferences.associatedPhrasesEnabled = associatedPhrasesEnabled
     }
 
+    func testSelectingCandidateMovesToNextChineseNodeInBeforeCursorMode() {
+        let associatedPhrasesEnabled = Preferences.associatedPhrasesEnabled
+        let selectPhraseAfterCursorAsCandidate = Preferences.selectPhraseAfterCursorAsCandidate
+        let moveCursorAfterSelectingCandidate = Preferences.moveCursorAfterSelectingCandidate
+        Preferences.associatedPhrasesEnabled = false
+        Preferences.selectPhraseAfterCursorAsCandidate = false
+        Preferences.moveCursorAfterSelectingCandidate = true
+        defer {
+            Preferences.associatedPhrasesEnabled = associatedPhrasesEnabled
+            Preferences.selectPhraseAfterCursorAsCandidate =
+                selectPhraseAfterCursorAsCandidate
+            Preferences.moveCursorAfterSelectingCandidate = moveCursorAfterSelectingCandidate
+        }
+
+        var state: InputState = InputState.Empty()
+        for key in "su3cl3" {
+            let text = String(key)
+            let input = KeyHandlerInput(
+                inputText: text, keyCode: 0, charCode: charCode(text), flags: [],
+                isVerticalMode: false)
+            XCTAssertTrue(
+                handler.handle(
+                    input: input, state: state,
+                    stateCallback: { state = $0 }, errorCallback: {}))
+        }
+        guard let initial = state as? InputState.Inputting else {
+            return XCTFail("Expected inputting state")
+        }
+        XCTAssertEqual(initial.composingBuffer, "你好")
+
+        let left = KeyHandlerInput(
+            inputText: " ", keyCode: KeyCode.left.rawValue, charCode: 0, flags: [],
+            isVerticalMode: false)
+        XCTAssertTrue(
+            handler.handle(
+                input: left, state: state,
+                stateCallback: { state = $0 }, errorCallback: {}))
+        XCTAssertEqual((state as? InputState.Inputting)?.cursorIndex, 1)
+
+        let down = KeyHandlerInput(
+            inputText: " ", keyCode: KeyCode.down.rawValue, charCode: 0, flags: [],
+            isVerticalMode: false)
+        XCTAssertTrue(
+            handler.handle(
+                input: down, state: state,
+                stateCallback: { state = $0 }, errorCallback: {}))
+        guard let choosing = state as? InputState.ChoosingCandidate,
+            let selected = choosing.candidates.first
+        else {
+            return XCTFail("Expected candidate state")
+        }
+        XCTAssertEqual(choosing.candidateCursorIndex, 0)
+
+        handler.fixNode(
+            reading: selected.reading, value: selected.value,
+            originalCursorIndex: Int(choosing.originalCursorIndex),
+            useMoveCursorAfterSelectionSetting: true)
+        state = handler.buildInputtingState()
+        XCTAssertEqual((state as? InputState.Inputting)?.cursorIndex, 2)
+
+        XCTAssertTrue(
+            handler.handle(
+                input: down, state: state,
+                stateCallback: { state = $0 }, errorCallback: {}))
+        guard let nextChoosing = state as? InputState.ChoosingCandidate else {
+            return XCTFail("Expected candidate state for the next Chinese node")
+        }
+        XCTAssertEqual(nextChoosing.candidateCursorIndex, 1)
+    }
+
     func testCandidateWithSpace() {
         let enabled = Preferences.chooseCandidateUsingSpace
         let selectPhraseAfterCursorAsCandidate = Preferences.selectPhraseAfterCursorAsCandidate

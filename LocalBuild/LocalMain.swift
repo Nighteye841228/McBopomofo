@@ -51,16 +51,22 @@ enum LocalMain {
         let savedPersonalizationEnabled = Preferences.mixedInputPersonalizationEnabled
         let savedKeyboardLayout = Preferences.keyboardLayout
         let savedAssociatedPhrasesEnabled = Preferences.associatedPhrasesEnabled
+        let savedSelectPhraseAfterCursor = Preferences.selectPhraseAfterCursorAsCandidate
+        let savedMoveCursorAfterSelection = Preferences.moveCursorAfterSelectingCandidate
         defer {
             Preferences.mixedInputEnabled = savedMixedInputEnabled
             Preferences.mixedInputPersonalizationEnabled = savedPersonalizationEnabled
             Preferences.keyboardLayout = savedKeyboardLayout
             Preferences.associatedPhrasesEnabled = savedAssociatedPhrasesEnabled
+            Preferences.selectPhraseAfterCursorAsCandidate = savedSelectPhraseAfterCursor
+            Preferences.moveCursorAfterSelectingCandidate = savedMoveCursorAfterSelection
         }
         Preferences.mixedInputEnabled = true
         Preferences.mixedInputPersonalizationEnabled = false
         Preferences.keyboardLayout = .standard
         Preferences.associatedPhrasesEnabled = false
+        Preferences.selectPhraseAfterCursorAsCandidate = false
+        Preferences.moveCursorAfterSelectingCandidate = true
 
         func evaluateInputs(_ inputs: [(String, NSEvent.ModifierFlags)]) -> String? {
             let handler = KeyHandler()
@@ -169,6 +175,44 @@ enum LocalMain {
         else {
             fputs("Mixed candidate list did not preserve the original candidates\n", stderr)
             return 14
+        }
+
+        let cursorHandler = KeyHandler()
+        cursorHandler.inputMode = .bopomofo
+        cursorHandler.syncWithPreferences()
+        var cursorState: InputState = InputState.Empty()
+        for key in "su3cl3" {
+            let text = String(key)
+            let input = KeyHandlerInput(
+                inputText: text, keyCode: 0, charCode: text.utf16.first ?? 0,
+                flags: [], isVerticalMode: false)
+            _ = cursorHandler.handle(
+                input: input, state: cursorState,
+                stateCallback: { cursorState = $0 }, errorCallback: {})
+        }
+        let left = KeyHandlerInput(
+            inputText: " ", keyCode: 123, charCode: 0, flags: [], isVerticalMode: false)
+        _ = cursorHandler.handle(
+            input: left, state: cursorState,
+            stateCallback: { cursorState = $0 }, errorCallback: {})
+        _ = cursorHandler.handle(
+            input: down, state: cursorState,
+            stateCallback: { cursorState = $0 }, errorCallback: {})
+        guard let cursorChoosing = cursorState as? InputState.ChoosingCandidate,
+            let selected = cursorChoosing.candidates.first
+        else {
+            fputs("Candidate cursor self-check could not open candidates\n", stderr)
+            return 21
+        }
+        cursorHandler.fixNode(
+            reading: selected.reading, value: selected.value,
+            originalCursorIndex: Int(cursorChoosing.originalCursorIndex),
+            useMoveCursorAfterSelectionSetting: true)
+        guard let moved = cursorHandler.buildInputtingState() as? InputState.Inputting,
+            moved.cursorIndex == 2
+        else {
+            fputs("Candidate cursor did not move to the next Chinese node\n", stderr)
+            return 22
         }
         let carryHandler = KeyHandler()
         carryHandler.inputMode = .bopomofo

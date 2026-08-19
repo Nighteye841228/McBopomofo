@@ -174,8 +174,13 @@ final class MixedInputKeyHandlerTests: XCTestCase {
 
     func testSelectingChineseAlternativeMovesToNextReading() {
         let oldMoveCursor = Preferences.moveCursorAfterSelectingCandidate
-        defer { Preferences.moveCursorAfterSelectingCandidate = oldMoveCursor }
+        let oldSelectAfterCursor = Preferences.selectPhraseAfterCursorAsCandidate
+        defer {
+            Preferences.moveCursorAfterSelectingCandidate = oldMoveCursor
+            Preferences.selectPhraseAfterCursorAsCandidate = oldSelectAfterCursor
+        }
         Preferences.moveCursorAfterSelectingCandidate = true
+        Preferences.selectPhraseAfterCursorAsCandidate = false
 
         sendKeys("a3")
         XCTAssertTrue(sendDown())
