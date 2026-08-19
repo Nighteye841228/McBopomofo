@@ -143,6 +143,11 @@ final class MixedInputKeyHandlerTests: XCTestCase {
         XCTAssertEqual(composingBuffer, "")
     }
 
+    func testDomainLikeAsciiDoesNotSplitCompletedChinesePrefix() {
+        sendKeys("bt4g.org")
+        XCTAssertEqual(composingBuffer, "bt4g.org")
+    }
+
     func testBackspaceDeletesPendingAsciiOneCharacterAtATime() {
         sendKeys("call")
         XCTAssertTrue(send("\u{8}"))

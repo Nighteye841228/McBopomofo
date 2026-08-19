@@ -199,6 +199,13 @@ bool MixedInputSegmenter::HasStructuralAsciiEvidence(std::string_view raw) {
     // cannot be treated as decisive ASCII evidence.
     // Slash is also the Standard Bopomofo key for ㄥ; only treat it as
     // structural ASCII when it participates in a URL scheme separator.
+    // A period followed by a letter after an alphanumeric prefix is domain
+    // evidence, while u.3 and ru.4 remain valid Bopomofo syllables.
+    if (key == '.' && index > 0 && index + 1 < raw.size() &&
+        std::isalnum(static_cast<unsigned char>(raw[index - 1])) &&
+        std::isalpha(static_cast<unsigned char>(raw[index + 1]))) {
+      return true;
+    }
     if (key == ':' && index + 2 < raw.size() && raw[index + 1] == '/' &&
         raw[index + 2] == '/') {
       return true;

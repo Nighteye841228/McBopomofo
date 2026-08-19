@@ -119,6 +119,11 @@ enum LocalMain {
             fputs("OU-key regression failed\n", stderr)
             return 15
         }
+        guard evaluate("bt4g.org") == "bt4g.org" else {
+            let actual = evaluate("bt4g.org") ?? "<not inputting>"
+            fputs("Domain ASCII regression failed: \(actual)\n", stderr)
+            return 20
+        }
         guard evaluate("104293284584") == "辦逮大炸" else {
             let actual = evaluate("104293284584") ?? "<not inputting>"
             fputs("Numeric Bopomofo regression failed: \(actual)\n", stderr)

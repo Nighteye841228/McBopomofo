@@ -66,6 +66,20 @@ struct MixedInputDeferredSpace {
     bool rollbackOnHardBoundary;
 };
 
+struct MixedInputCommittedChunk {
+    std::string raw;
+    std::vector<std::string> readings;
+    size_t readingStart;
+};
+
+bool MixedInputHasDomainEvidence(const std::string& raw)
+{
+    return McBopomofo::MixedInputSegmenter::HasStructuralAsciiEvidence(raw) &&
+        std::any_of(raw.begin(), raw.end(), [](char value) {
+            return value == '.';
+        });
+}
+
 bool MixedResultHasChinese(const McBopomofo::MixedInputSegmenter::Result& result)
 {
     return std::any_of(result.segments.begin(), result.segments.end(), [](const auto& segment) {
@@ -96,6 +110,7 @@ bool MixedResultIsExactChinese(const McBopomofo::MixedInputSegmenter::Result& re
     std::optional<size_t> _mixedInputLastReadingIndex;
     bool _mixedInputLastBoundaryWasSpace;
     std::optional<MixedInputDeferredSpace> _mixedInputDeferredSpace;
+    std::optional<MixedInputCommittedChunk> _mixedInputLastCommittedChunk;
 
     // user override model
     McBopomofo::UserOverrideModel *_userOverrideModel;
@@ -156,6 +171,7 @@ bool MixedResultIsExactChinese(const McBopomofo::MixedInputSegmenter::Result& re
         _mixedInputLastReadingIndex.reset();
         _mixedInputLastBoundaryWasSpace = false;
         _mixedInputDeferredSpace.reset();
+        _mixedInputLastCommittedChunk.reset();
 
         if (!_bpmfReadingBuffer->isEmpty()) {
             _bpmfReadingBuffer->clear();
@@ -360,6 +376,7 @@ bool MixedResultIsExactChinese(const McBopomofo::MixedInputSegmenter::Result& re
     _mixedInputLastReadingIndex.reset();
     _mixedInputLastBoundaryWasSpace = false;
     _mixedInputDeferredSpace.reset();
+    _mixedInputLastCommittedChunk.reset();
     _grid->clear();
     _mixedLanguageModel->clearLiterals();
     _latestWalk = Formosa::Gramambular2::ReadingGrid::WalkResult {};
@@ -413,6 +430,45 @@ bool MixedResultIsExactChinese(const McBopomofo::MixedInputSegmenter::Result& re
         }
     }
     return NO;
+}
+
+- (BOOL)_rollbackLastCommittedChunkAsEnglishAppending:(const std::string&)pending
+{
+    if (!_mixedInputLastCommittedChunk) {
+        return NO;
+    }
+
+    const MixedInputCommittedChunk chunk = *_mixedInputLastCommittedChunk;
+    std::string combined = chunk.raw + pending;
+    if (!MixedInputHasDomainEvidence(combined) ||
+        chunk.readings.empty() ||
+        chunk.readingStart + chunk.readings.size() > _grid->length() ||
+        _grid->cursor() != chunk.readingStart + chunk.readings.size()) {
+        return NO;
+    }
+
+    for (size_t index = 0; index < chunk.readings.size(); ++index) {
+        if (_grid->readings()[chunk.readingStart + index] != chunk.readings[index]) {
+            return NO;
+        }
+    }
+
+    _grid->setCursor(chunk.readingStart + chunk.readings.size());
+    for (size_t index = 0; index < chunk.readings.size(); ++index) {
+        _grid->deleteReadingBeforeCursor();
+    }
+    for (char value : combined) {
+        std::string literal = _mixedLanguageModel->registerLiteral(std::string(1, value));
+        _grid->insertReading(literal);
+    }
+
+    _mixedInputPending.clear();
+    _mixedInputLastRaw.clear();
+    _mixedInputLastReadingIndex.reset();
+    _mixedInputLastBoundaryWasSpace = false;
+    _mixedInputLastCommittedChunk.reset();
+    [self _walk];
+    return YES;
 }
 
 - (void)_resolveMixedInputDeferredSpaceAsEnglish:(BOOL)useEnglish
@@ -565,6 +621,18 @@ bool MixedResultIsExactChinese(const McBopomofo::MixedInputSegmenter::Result& re
     if (appendSpace && !spaceCompletedFirstTone) {
         std::string literal = _mixedLanguageModel->registerLiteral(" ");
         _grid->insertReading(literal);
+    }
+
+    _mixedInputLastCommittedChunk.reset();
+    if (!useEnglish && boundary == McBopomofo::MixedInputSegmenter::Boundary::kNone &&
+        hasChinese && _grid->cursor() > insertedReadingStart) {
+        _mixedInputLastCommittedChunk = MixedInputCommittedChunk {
+            raw,
+            std::vector<std::string>(
+                _grid->readings().begin() + static_cast<ptrdiff_t>(insertedReadingStart),
+                _grid->readings().begin() + static_cast<ptrdiff_t>(_grid->cursor())),
+            insertedReadingStart,
+        };
     }
 
     if (spaceCompletedFirstTone && _mixedInputLastReadingIndex &&
@@ -769,6 +837,11 @@ bool MixedResultIsExactChinese(const McBopomofo::MixedInputSegmenter::Result& re
         _mixedInputLastBoundaryWasSpace = false;
     }
     _mixedInputPending.push_back(value);
+    if (_mixedInputPending.size() > 1 &&
+        [self _rollbackLastCommittedChunkAsEnglishAppending:_mixedInputPending]) {
+        stateCallback([self buildInputtingState]);
+        return YES;
+    }
     if (value == '3' || value == '4' || value == '6' || value == '7') {
         [self _flushMixedInputWithBoundary:McBopomofo::MixedInputSegmenter::Boundary::kNone
                               appendSpace:NO

@@ -132,6 +132,13 @@ TEST_F(MixedInputSegmenterTest, PeriodAloneIsNotStructuralAsciiEvidence) {
             (std::vector<Segment>{{Kind::kChinese, "ru.4", "ㄐㄧㄡˋ"}}));
 }
 
+TEST_F(MixedInputSegmenterTest, DomainPeriodIsStructuralAsciiEvidence) {
+  EXPECT_TRUE(MixedInputSegmenter::HasStructuralAsciiEvidence("bt4g.org"));
+  EXPECT_TRUE(MixedInputSegmenter::HasStructuralAsciiEvidence("foo.bar"));
+  EXPECT_FALSE(MixedInputSegmenter::HasStructuralAsciiEvidence("u.3"));
+  EXPECT_FALSE(MixedInputSegmenter::HasStructuralAsciiEvidence("ru.4"));
+}
+
 TEST_F(MixedInputSegmenterTest, NumericSyllablesOverrideAsciiEvidence) {
   const std::vector<Segment> expected = {
       {Kind::kChinese, "104", "ㄅㄢˋ"},
