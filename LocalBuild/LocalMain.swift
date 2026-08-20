@@ -134,8 +134,8 @@ enum LocalMain {
             ("ru.456ru, ", "就直接"),
             ("e942. ", "概都"),
             ("capsfu, ", "caps切"),
-            ("g4tester@example.org", "是tester@example.org"),
-            ("bj4https://api.example.net/v2/status", "入https://api.example.net/v2/status"),
+            ("g4tester@example.org", "是tester＠example.org"),
+            ("bj4https://api.example.net/v2/status", "入https：//api.example.net/v2/status"),
         ]
         for (input, expected) in chinesePriorityCases {
             guard evaluate(input) == expected else {
@@ -152,6 +152,13 @@ enum LocalMain {
                 "Shifted punctuation regression failed: \(shiftedPunctuation ?? "<nil>")\n",
                 stderr)
             return 23
+        }
+        let closingQuote = evaluateInputs([
+            ("a", []), ("p", []), ("p", []), ("l", []), ("e", []), ("]", []),
+        ])
+        guard closingQuote == "apple」" else {
+            fputs("Closing quote regression failed: \(closingQuote ?? "<nil>")\n", stderr)
+            return 24
         }
         guard evaluate("104293284584") == "辦逮大炸" else {
             let actual = evaluate("104293284584") ?? "<not inputting>"

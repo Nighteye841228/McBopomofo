@@ -158,14 +158,14 @@ final class MixedInputKeyHandlerTests: XCTestCase {
         XCTAssertEqual(composingBuffer, "概都")
     }
 
-    func testExactChinesePrefixBeforeEmailRemainsChinese() {
+    func testExactChinesePrefixBeforeEmailUsesChinesePunctuation() {
         sendKeys("g4tester@example.org")
-        XCTAssertEqual(composingBuffer, "是tester@example.org")
+        XCTAssertEqual(composingBuffer, "是tester＠example.org")
     }
 
-    func testExactChinesePrefixBeforeUrlRemainsChinese() {
+    func testExactChinesePrefixBeforeUrlUsesChinesePunctuation() {
         sendKeys("bj4https://api.example.net/v2/status")
-        XCTAssertEqual(composingBuffer, "入https://api.example.net/v2/status")
+        XCTAssertEqual(composingBuffer, "入https：//api.example.net/v2/status")
     }
 
     func testBackspaceDeletesPendingAsciiOneCharacterAtATime() {
@@ -254,6 +254,12 @@ final class MixedInputKeyHandlerTests: XCTestCase {
         sendKeys("su3")
         XCTAssertTrue(send(">", flags: .shift))
         XCTAssertEqual(composingBuffer, "你。")
+    }
+
+    func testClosingQuoteAfterEnglishUsesChinesePunctuation() {
+        sendKeys("apple")
+        XCTAssertTrue(send("]"))
+        XCTAssertEqual(composingBuffer, "apple」")
     }
 
     func testAmbiguousFirstToneRollsBackBeforeEnglishToken() {

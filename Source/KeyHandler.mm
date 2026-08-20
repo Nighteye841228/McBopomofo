@@ -819,7 +819,7 @@ bool MixedResultIsExactChinese(const McBopomofo::MixedInputSegmenter::Result& re
 
     bool isLetter = std::isalpha(static_cast<unsigned char>(charCode));
     bool isBopomofoKey = _bpmfReadingBuffer->isValidKey((char)charCode);
-    if (input.isShiftHold && !isLetter) {
+    if (!isLetter && !isBopomofoKey) {
         if (!_mixedInputPending.empty()) {
             [self _flushMixedInputWithBoundary:McBopomofo::MixedInputSegmenter::Boundary::kEnter
                                   appendSpace:NO
