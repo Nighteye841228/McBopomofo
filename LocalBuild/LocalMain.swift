@@ -130,6 +130,29 @@ enum LocalMain {
             fputs("Domain ASCII regression failed: \(actual)\n", stderr)
             return 20
         }
+        let chinesePriorityCases = [
+            ("ru.456ru, ", "就直接"),
+            ("e942. ", "概都"),
+            ("capsfu, ", "caps切"),
+            ("g4tester@example.org", "是tester@example.org"),
+            ("bj4https://api.example.net/v2/status", "入https://api.example.net/v2/status"),
+        ]
+        for (input, expected) in chinesePriorityCases {
+            guard evaluate(input) == expected else {
+                let actual = evaluate(input) ?? "<not inputting>"
+                fputs("Chinese-priority regression failed for \(input): \(actual)\n", stderr)
+                return 22
+            }
+        }
+        let shiftedPunctuation = evaluateInputs([
+            ("s", []), ("u", []), ("3", []), (">", .shift),
+        ])
+        guard shiftedPunctuation == "你。" else {
+            fputs(
+                "Shifted punctuation regression failed: \(shiftedPunctuation ?? "<nil>")\n",
+                stderr)
+            return 23
+        }
         guard evaluate("104293284584") == "辦逮大炸" else {
             let actual = evaluate("104293284584") ?? "<not inputting>"
             fputs("Numeric Bopomofo regression failed: \(actual)\n", stderr)

@@ -16,6 +16,11 @@ bool IsToneKey(char key) {
   return key == '3' || key == '4' || key == '6' || key == '7';
 }
 
+bool IsConsonantKey(char key) {
+  constexpr std::string_view consonantKeys = "1qaz2wsxedcrfv5tgbyhn";
+  return consonantKeys.find(key) != std::string_view::npos;
+}
+
 }  // namespace
 
 MixedInputSegmenter::MixedInputSegmenter(HasUnigrams hasUnigrams)
@@ -77,17 +82,32 @@ MixedInputSegmenter::Result MixedInputSegmenter::segment(
       pendingStart = toneIndex + 1;
       continue;
     } else {
-      // Prefer the shortest suffix with at least two phonetic components, then
-      // fall back to a one-component syllable such as m3 (ㄩˇ). This keeps the
-      // final letter in "call" out of "su3" without losing valid short forms.
+      // Prefer the shortest suffix that begins with a consonant key. This
+      // keeps call + su3 intact while choosing caps + fu, over capsf followed
+      // by a vowel-only suffix.
+      // Non-canonical component order remains available as a fallback.
       if (toneIndex >= pendingStart + 2) {
+        std::optional<size_t> fallbackStart;
+        std::optional<std::string> fallbackReading;
         for (size_t start = toneIndex - 1; start > pendingStart; --start) {
           size_t candidateStart = start - 1;
-          reading = readingAt(candidateStart);
-          if (reading) {
+          std::optional<std::string> candidate = readingAt(candidateStart);
+          if (!candidate) {
+            continue;
+          }
+          if (!fallbackReading) {
+            fallbackStart = candidateStart;
+            fallbackReading = candidate;
+          }
+          if (IsConsonantKey(raw[candidateStart])) {
             chineseStart = candidateStart;
+            reading = candidate;
             break;
           }
+        }
+        if (!reading && fallbackReading) {
+          chineseStart = fallbackStart;
+          reading = fallbackReading;
         }
       }
       if (!reading && toneIndex > pendingStart) {
@@ -137,13 +157,28 @@ MixedInputSegmenter::Result MixedInputSegmenter::segment(
       appendLiteral(result.segments, tail);
       return result;
     } else {
+      std::optional<size_t> fallbackStart;
+      std::optional<std::string> fallbackReading;
       for (size_t start = raw.size() - 1; start > pendingStart; --start) {
         size_t candidateStart = start - 1;
-        reading = firstToneReadingAt(candidateStart);
-        if (reading) {
+        std::optional<std::string> candidate =
+            firstToneReadingAt(candidateStart);
+        if (!candidate) {
+          continue;
+        }
+        if (!fallbackReading) {
+          fallbackStart = candidateStart;
+          fallbackReading = candidate;
+        }
+        if (IsConsonantKey(raw[candidateStart])) {
           chineseStart = candidateStart;
+          reading = candidate;
           break;
         }
+      }
+      if (!reading && fallbackReading) {
+        chineseStart = fallbackStart;
+        reading = fallbackReading;
       }
       if (!reading && raw.size() > pendingStart) {
         size_t candidateStart = raw.size() - 1;

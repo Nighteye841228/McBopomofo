@@ -650,7 +650,7 @@ bool MixedResultIsExactChinese(const McBopomofo::MixedInputSegmenter::Result& re
 
     _mixedInputLastCommittedChunk.reset();
     if (!useEnglish && boundary == McBopomofo::MixedInputSegmenter::Boundary::kNone &&
-        hasChinese && _grid->cursor() > insertedReadingStart) {
+        hasChinese && !exactChinese && _grid->cursor() > insertedReadingStart) {
         _mixedInputLastCommittedChunk = MixedInputCommittedChunk {
             raw,
             std::vector<std::string>(
@@ -819,6 +819,17 @@ bool MixedResultIsExactChinese(const McBopomofo::MixedInputSegmenter::Result& re
 
     bool isLetter = std::isalpha(static_cast<unsigned char>(charCode));
     bool isBopomofoKey = _bpmfReadingBuffer->isValidKey((char)charCode);
+    if (input.isShiftHold && !isLetter) {
+        if (!_mixedInputPending.empty()) {
+            [self _flushMixedInputWithBoundary:McBopomofo::MixedInputSegmenter::Boundary::kEnter
+                                  appendSpace:NO
+                               interpretation:MixedInputInterpretation::kAutomatic];
+            stateCallback([self buildInputtingState]);
+        } else {
+            [self _resolveMixedInputDeferredSpaceAsEnglish:NO];
+        }
+        return NO;
+    }
     bool startsOrContinuesToken = !_mixedInputPending.empty() || input.isCapsLockOn ||
         isLetter || isBopomofoKey;
     if (!startsOrContinuesToken) {

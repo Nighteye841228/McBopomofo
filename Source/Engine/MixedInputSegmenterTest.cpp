@@ -26,7 +26,7 @@ class MixedInputSegmenterTest : public ::testing::Test {
   std::set<std::string> readings = {"ㄋㄧˇ", "ㄨㄛ", "ㄨㄛˇ", "ㄧㄡˇ", "ㄐㄧㄡˋ",
                                     "ㄅㄢˋ", "ㄉㄞˇ", "ㄉㄚˋ", "ㄓㄚˋ", "ㄚˋ",
                                     "ㄓㄚ", "ㄚ", "ㄐㄧˋ", "ㄇˇ", "ㄒㄧㄢˋ",
-                                    "ㄗㄞˋ", "ㄓㄨㄥ", "ㄨㄣˊ"};
+                                    "ㄗㄞˋ", "ㄓㄨㄥ", "ㄨㄣˊ", "ㄑㄧㄝ", "ㄧㄝ"};
 };
 
 TEST_F(MixedInputSegmenterTest, KeepsInvalidBopomofoAsLiteral) {
@@ -87,6 +87,13 @@ TEST_F(MixedInputSegmenterTest, SpaceFindsFirstToneSuffixAfterAscii) {
   EXPECT_EQ(result.segments[0], (Segment{Kind::kLiteral, "interface", ""}));
   EXPECT_EQ(result.segments[1].kind, Kind::kChinese);
   EXPECT_EQ(result.segments[1].raw, "d9");
+}
+
+TEST_F(MixedInputSegmenterTest, PrefersConsonantLedChineseFirstToneSuffix) {
+  auto result = makeSegmenter().segment("capsfu,", Boundary::kSpace);
+  EXPECT_EQ(result.segments,
+            (std::vector<Segment>{{Kind::kLiteral, "caps", ""},
+                                  {Kind::kChinese, "fu,", "ㄑㄧㄝ"}}));
 }
 
 TEST_F(MixedInputSegmenterTest, AllowsSingleComponentSuffixBeforeTone) {
