@@ -185,14 +185,16 @@ enum LocalMain {
         let spacedEnglish = "hello world "
         let spacedActual = evaluate(spacedEnglish)
         let ambiguousActual = evaluate("ai model ")
-        let strongActual = evaluate("g0 dashboard model")
+        let strongActual = evaluate("g0 dashboard model ")
+        let chineseAfterEnglishActual = evaluate("ji3vsvm ru83")
         guard spacedActual == spacedEnglish, ambiguousActual == "ai model ",
-            strongActual == "山dashboard model"
+            strongActual == "山dashboard model ", chineseAfterEnglishActual == "我vs虛假"
         else {
             fputs(
                 "Deferred-space regression failed: spaced=\(spacedActual ?? "<nil>"), "
                     + "ambiguous=\(ambiguousActual ?? "<nil>"), "
-                    + "strong=\(strongActual ?? "<nil>")\n",
+                    + "strong=\(strongActual ?? "<nil>"), "
+                    + "chineseAfterEnglish=\(chineseAfterEnglishActual ?? "<nil>")\n",
                 stderr)
             return 18
         }

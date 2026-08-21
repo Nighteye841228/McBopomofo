@@ -521,22 +521,22 @@ bool MixedResultIsExactChinese(const McBopomofo::MixedInputSegmenter::Result& re
     return YES;
 }
 
-- (void)_resolveMixedInputDeferredSpaceAsEnglish:(BOOL)useEnglish
+- (BOOL)_resolveMixedInputDeferredSpaceAsEnglish:(BOOL)useEnglish
 {
     if (!_mixedInputDeferredSpace) {
-        return;
+        return NO;
     }
 
     const MixedInputDeferredSpace deferred = *_mixedInputDeferredSpace;
     _mixedInputDeferredSpace.reset();
     if (!useEnglish || deferred.readings.empty() ||
         deferred.readingStart + deferred.readings.size() > _grid->length()) {
-        return;
+        return NO;
     }
 
     for (size_t index = 0; index < deferred.readings.size(); ++index) {
         if (_grid->readings()[deferred.readingStart + index] != deferred.readings[index]) {
-            return;
+            return NO;
         }
     }
 
@@ -554,6 +554,7 @@ bool MixedResultIsExactChinese(const McBopomofo::MixedInputSegmenter::Result& re
     _mixedInputLastReadingIndex.reset();
     _mixedInputLastBoundaryWasSpace = false;
     [self _walk];
+    return YES;
 }
 
 - (NSString *)_mixedInputPreview
@@ -612,6 +613,7 @@ bool MixedResultIsExactChinese(const McBopomofo::MixedInputSegmenter::Result& re
     bool currentLooksEnglish = boundary == McBopomofo::MixedInputSegmenter::Boundary::kSpace
         ? !exactChinese
         : !hasChinese;
+    BOOL previousSpaceResolvedAsEnglish = NO;
     if (_mixedInputDeferredSpace) {
         bool deferredRawIsLettersOnly = std::all_of(
             _mixedInputDeferredSpace->raw.begin(), _mixedInputDeferredSpace->raw.end(), [](char value) {
@@ -619,14 +621,12 @@ bool MixedResultIsExactChinese(const McBopomofo::MixedInputSegmenter::Result& re
             });
         bool rollback = currentLooksEnglish &&
             (_mixedInputDeferredSpace->rollbackOnEnglish || deferredRawIsLettersOnly);
-        [self _resolveMixedInputDeferredSpaceAsEnglish:rollback];
+        previousSpaceResolvedAsEnglish =
+            [self _resolveMixedInputDeferredSpaceAsEnglish:rollback];
     }
 
     bool priorHasLiteral = [self _gridContainsMixedLiteral];
     bool priorHasChinese = [self _gridContainsChineseReading];
-    bool rawIsLettersOnly = std::all_of(raw.begin(), raw.end(), [](char value) {
-        return std::isalpha(static_cast<unsigned char>(value));
-    });
     bool useEnglish = interpretation == MixedInputInterpretation::kEnglish;
     if (interpretation == MixedInputInterpretation::kAutomatic) {
         useEnglish =
@@ -635,8 +635,8 @@ bool MixedResultIsExactChinese(const McBopomofo::MixedInputSegmenter::Result& re
     }
     bool priorWasEnglishOnly = priorHasLiteral && !priorHasChinese;
     if (boundary == McBopomofo::MixedInputSegmenter::Boundary::kSpace &&
-        (!hasChinese || (!exactChinese && priorWasEnglishOnly) ||
-            (rawIsLettersOnly && !exactChinese && priorHasChinese))) {
+        (!hasChinese ||
+            (!exactChinese && (priorWasEnglishOnly || previousSpaceResolvedAsEnglish)))) {
         useEnglish = true;
     }
 

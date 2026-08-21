@@ -308,8 +308,13 @@ final class MixedInputKeyHandlerTests: XCTestCase {
     }
 
     func testStrongChineseFirstToneRemainsBeforeEnglishToken() {
-        sendKeys("g0 dashboard model")
-        XCTAssertEqual(composingBuffer, "山dashboard model")
+        sendKeys("g0 dashboard model ")
+        XCTAssertEqual(composingBuffer, "山dashboard model ")
+    }
+
+    func testEnglishPrefixBeforeChineseFirstToneUsesDeferredSpace() {
+        sendKeys("ji3vsvm ru83")
+        XCTAssertEqual(composingBuffer, "我vs虛假")
     }
 
     func testSelectingEnglishFirstToneAlternativeRestoresSpace() {
