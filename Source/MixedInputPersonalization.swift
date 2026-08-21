@@ -164,3 +164,84 @@ final class MixedInputPersonalization: NSObject {
         return SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
     }
 }
+
+@objc(CandidateSelectionPersonalization)
+final class CandidateSelectionPersonalization: NSObject {
+    private struct Entry: Codable, Equatable {
+        var value: String
+        var timestamp: TimeInterval
+    }
+
+    private struct Store: Codable {
+        var version = 1
+        var entries: [String: Entry] = [:]
+    }
+
+    static let dataKey = "CandidateSelectionPersonalizationDataV1"
+    private static let capacity = 500
+
+    @objc(preferredValueForReading:)
+    static func preferredValue(forReading reading: String) -> String? {
+        preferredValue(forReading: reading, defaults: .standard)
+    }
+
+    @objc(observeReading:value:)
+    static func observe(reading: String, value: String) {
+        observe(reading: reading, value: value, defaults: .standard, now: Date())
+    }
+
+    static func preferredValue(forReading reading: String, defaults: UserDefaults) -> String? {
+        guard isEligible(reading: reading) else {
+            return nil
+        }
+        return loadStore(defaults: defaults).entries[reading]?.value
+    }
+
+    static func observe(
+        reading: String, value: String, defaults: UserDefaults, now: Date = Date()
+    ) {
+        guard isEligible(reading: reading), value.count == 1 else {
+            return
+        }
+
+        var store = loadStore(defaults: defaults)
+        store.entries[reading] = Entry(value: value, timestamp: now.timeIntervalSince1970)
+        if store.entries.count > capacity {
+            let overflow = store.entries.count - capacity
+            let oldestReadings = store.entries.sorted { lhs, rhs in
+                if lhs.value.timestamp == rhs.value.timestamp {
+                    return lhs.key < rhs.key
+                }
+                return lhs.value.timestamp < rhs.value.timestamp
+            }.prefix(overflow).map(\.key)
+            for oldReading in oldestReadings {
+                store.entries.removeValue(forKey: oldReading)
+            }
+        }
+        save(store: store, defaults: defaults)
+    }
+
+    static func reset(defaults: UserDefaults = .standard) {
+        defaults.removeObject(forKey: dataKey)
+    }
+
+    private static func isEligible(reading: String) -> Bool {
+        !reading.isEmpty && !reading.hasPrefix("_") && !reading.contains("-")
+    }
+
+    private static func loadStore(defaults: UserDefaults) -> Store {
+        guard let data = defaults.data(forKey: dataKey),
+            let store = try? JSONDecoder().decode(Store.self, from: data), store.version == 1
+        else {
+            return Store()
+        }
+        return store
+    }
+
+    private static func save(store: Store, defaults: UserDefaults) {
+        guard let data = try? JSONEncoder().encode(store), data.count <= 1_048_576 else {
+            return
+        }
+        defaults.set(data, forKey: dataKey)
+    }
+}

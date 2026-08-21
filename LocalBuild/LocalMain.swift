@@ -53,6 +53,8 @@ enum LocalMain {
         let savedAssociatedPhrasesEnabled = Preferences.associatedPhrasesEnabled
         let savedSelectPhraseAfterCursor = Preferences.selectPhraseAfterCursorAsCandidate
         let savedMoveCursorAfterSelection = Preferences.moveCursorAfterSelectingCandidate
+        let savedCandidateSelectionData = UserDefaults.standard.data(
+            forKey: CandidateSelectionPersonalization.dataKey)
         defer {
             Preferences.mixedInputEnabled = savedMixedInputEnabled
             Preferences.mixedInputPersonalizationEnabled = savedPersonalizationEnabled
@@ -60,6 +62,13 @@ enum LocalMain {
             Preferences.associatedPhrasesEnabled = savedAssociatedPhrasesEnabled
             Preferences.selectPhraseAfterCursorAsCandidate = savedSelectPhraseAfterCursor
             Preferences.moveCursorAfterSelectingCandidate = savedMoveCursorAfterSelection
+            if let savedCandidateSelectionData {
+                UserDefaults.standard.set(
+                    savedCandidateSelectionData,
+                    forKey: CandidateSelectionPersonalization.dataKey)
+            } else {
+                CandidateSelectionPersonalization.reset()
+            }
         }
         Preferences.mixedInputEnabled = true
         Preferences.mixedInputPersonalizationEnabled = false
@@ -67,6 +76,7 @@ enum LocalMain {
         Preferences.associatedPhrasesEnabled = false
         Preferences.selectPhraseAfterCursorAsCandidate = false
         Preferences.moveCursorAfterSelectingCandidate = true
+        CandidateSelectionPersonalization.reset()
 
         func evaluateInputs(_ inputs: [(String, NSEvent.ModifierFlags)]) -> String? {
             let handler = KeyHandler()
@@ -160,6 +170,13 @@ enum LocalMain {
             fputs("Closing quote regression failed: \(closingQuote ?? "<nil>")\n", stderr)
             return 24
         }
+        CandidateSelectionPersonalization.observe(reading: "ㄉㄨㄣ", value: "蹲")
+        guard evaluate("2jp ") == "蹲" else {
+            let actual = evaluate("2jp ") ?? "<not inputting>"
+            fputs("Candidate personalization regression failed: \(actual)\n", stderr)
+            return 25
+        }
+        CandidateSelectionPersonalization.reset()
         guard evaluate("104293284584") == "辦逮大炸" else {
             let actual = evaluate("104293284584") ?? "<not inputting>"
             fputs("Numeric Bopomofo regression failed: \(actual)\n", stderr)

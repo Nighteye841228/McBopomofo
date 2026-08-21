@@ -132,3 +132,50 @@ struct MixedInputPersonalizationTests {
                 now: Date(timeIntervalSince1970: 2_000_000_000)) == .neutral)
     }
 }
+
+@Suite("Candidate Selection Personalization Tests", .serialized)
+struct CandidateSelectionPersonalizationTests {
+    private func makeDefaults() -> UserDefaults {
+        let suite = "CandidateSelectionPersonalizationTests.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defaults.removePersistentDomain(forName: suite)
+        return defaults
+    }
+
+    @Test("The latest single-character selection is persistent")
+    func latestSelectionWins() {
+        let defaults = makeDefaults()
+        CandidateSelectionPersonalization.observe(
+            reading: "ㄉㄨㄣ", value: "敦", defaults: defaults,
+            now: Date(timeIntervalSince1970: 1))
+        CandidateSelectionPersonalization.observe(
+            reading: "ㄉㄨㄣ", value: "蹲", defaults: defaults,
+            now: Date(timeIntervalSince1970: 2))
+
+        #expect(
+            CandidateSelectionPersonalization.preferredValue(
+                forReading: "ㄉㄨㄣ", defaults: defaults) == "蹲")
+        #expect(defaults.data(forKey: CandidateSelectionPersonalization.dataKey) != nil)
+    }
+
+    @Test("Phrase and punctuation selections are ignored")
+    func ignoresIneligibleSelections() {
+        let defaults = makeDefaults()
+        CandidateSelectionPersonalization.observe(
+            reading: "ㄉㄨㄣ-ㄏㄨㄤˊ", value: "敦煌", defaults: defaults)
+        CandidateSelectionPersonalization.observe(
+            reading: "_punctuation_>", value: "。", defaults: defaults)
+
+        #expect(defaults.data(forKey: CandidateSelectionPersonalization.dataKey) == nil)
+    }
+
+    @Test("Corrupted storage is ignored")
+    func corruptedStorage() {
+        let defaults = makeDefaults()
+        defaults.set(Data("not-json".utf8), forKey: CandidateSelectionPersonalization.dataKey)
+
+        #expect(
+            CandidateSelectionPersonalization.preferredValue(
+                forReading: "ㄉㄨㄣ", defaults: defaults) == nil)
+    }
+}

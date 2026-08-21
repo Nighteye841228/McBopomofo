@@ -13,11 +13,15 @@ final class MixedInputKeyHandlerTests: XCTestCase {
     private var savedMixedInputEnabled = false
     private var savedKeyboardLayout: KeyboardLayout = .standard
     private var savedAssociatedPhrasesEnabled = false
+    private var savedCandidateSelectionData: Data?
 
     override func setUpWithError() throws {
         savedMixedInputEnabled = Preferences.mixedInputEnabled
         savedKeyboardLayout = Preferences.keyboardLayout
         savedAssociatedPhrasesEnabled = Preferences.associatedPhrasesEnabled
+        savedCandidateSelectionData = UserDefaults.standard.data(
+            forKey: CandidateSelectionPersonalization.dataKey)
+        CandidateSelectionPersonalization.reset()
         Preferences.mixedInputEnabled = true
         Preferences.keyboardLayout = .standard
         Preferences.associatedPhrasesEnabled = false
@@ -32,6 +36,12 @@ final class MixedInputKeyHandlerTests: XCTestCase {
         Preferences.mixedInputEnabled = savedMixedInputEnabled
         Preferences.keyboardLayout = savedKeyboardLayout
         Preferences.associatedPhrasesEnabled = savedAssociatedPhrasesEnabled
+        if let savedCandidateSelectionData {
+            UserDefaults.standard.set(
+                savedCandidateSelectionData, forKey: CandidateSelectionPersonalization.dataKey)
+        } else {
+            CandidateSelectionPersonalization.reset()
+        }
     }
 
     @discardableResult
@@ -260,6 +270,36 @@ final class MixedInputKeyHandlerTests: XCTestCase {
         sendKeys("apple")
         XCTAssertTrue(send("]"))
         XCTAssertEqual(composingBuffer, "apple」")
+    }
+
+    func testSingleCharacterSelectionBecomesPreferred() {
+        sendKeys("2jp ")
+        XCTAssertTrue(sendDown())
+        guard let choosing = state as? InputState.ChoosingCandidate,
+            let selected = choosing.candidates.first(where: { $0.value == "蹲" })
+        else {
+            return XCTFail("Expected 蹲 in the candidate list")
+        }
+
+        if state is InputState.ChoosingMixedInputCandidate {
+            _ = handler.applyMixedInputCandidate(useEnglish: false)
+        }
+        handler.fixNode(
+            reading: selected.reading, value: selected.value,
+            originalCursorIndex: Int(choosing.originalCursorIndex),
+            candidateCursorIndex: Int(choosing.candidateCursorIndex),
+            useMoveCursorAfterSelectionSetting: false)
+
+        handler.clear()
+        state = InputState.Empty()
+        sendKeys("2jp ")
+        XCTAssertEqual(composingBuffer, "蹲")
+
+        XCTAssertTrue(sendDown())
+        guard let reordered = state as? InputState.ChoosingCandidate else {
+            return XCTFail("Expected candidate state after applying personalization")
+        }
+        XCTAssertEqual(reordered.candidates.first?.value, "蹲")
     }
 
     func testAmbiguousFirstToneRollsBackBeforeEnglishToken() {

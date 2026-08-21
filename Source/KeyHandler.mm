@@ -279,6 +279,9 @@ bool MixedResultIsExactChinese(const McBopomofo::MixedInputSegmenter::Result& re
         return;
     }
     Formosa::Gramambular2::ReadingGrid::NodePtr currentNode = *nodeIter;
+    if (currentNode != nullptr && currentNode->spanningLength() == 1) {
+        [CandidateSelectionPersonalization observeReading:reading value:value];
+    }
     if (currentNode != nullptr && currentNode->currentUnigram().score() > -8) {
         _userOverrideModel->observe(prevWalk, _latestWalk, candidateCursorIndex, [NSDate date].timeIntervalSince1970);
     }
@@ -455,6 +458,28 @@ bool MixedResultIsExactChinese(const McBopomofo::MixedInputSegmenter::Result& re
         }
     }
     return NO;
+}
+
+- (void)_applyCandidateSelectionPreferences
+{
+    if (_inputMode == InputModePlainBopomofo) {
+        return;
+    }
+
+    const auto& readings = _grid->readings();
+    for (size_t index = 0; index < readings.size(); ++index) {
+        NSString *preferredValue =
+            [CandidateSelectionPersonalization preferredValueForReading:@(readings[index].c_str())];
+        if (preferredValue == nil) {
+            continue;
+        }
+        Formosa::Gramambular2::ReadingGrid::Candidate candidate(
+            readings[index], preferredValue.UTF8String);
+        _grid->overrideCandidate(
+            index,
+            candidate,
+            Formosa::Gramambular2::ReadingGrid::Node::OverrideType::kOverrideValueWithScoreFromTopUnigram);
+    }
 }
 
 - (BOOL)_rollbackLastCommittedChunkAsEnglishAppending:(const std::string&)pending
@@ -680,6 +705,7 @@ bool MixedResultIsExactChinese(const McBopomofo::MixedInputSegmenter::Result& re
     }
 
     _mixedInputPending.clear();
+    [self _applyCandidateSelectionPreferences];
     [self _walk];
 }
 
@@ -1106,6 +1132,7 @@ bool MixedResultIsExactChinese(const McBopomofo::MixedInputSegmenter::Result& re
         }
 
         _grid->insertReading(reading);
+        [self _applyCandidateSelectionPreferences];
         [self _walk];
 
         // get user override model suggestion
@@ -3135,6 +3162,7 @@ bool MixedResultIsExactChinese(const McBopomofo::MixedInputSegmenter::Result& re
     }
 
     NSMutableArray *candidatesArray = [[NSMutableArray alloc] init];
+    InputStateCandidate *preferredCandidate = nil;
     for (const auto& c : candidates) {
         std::string displayText = c.value;
         if (valueCountMap[displayText] > 1) {
@@ -3151,7 +3179,18 @@ bool MixedResultIsExactChinese(const McBopomofo::MixedInputSegmenter::Result& re
         NSString *dt = @(displayText.c_str());
 
         InputStateCandidate *candidate = [[InputStateCandidate alloc] initWithReading:r value:v displayText:dt rawValue:rv];
-        [candidatesArray addObject:candidate];
+        NSString *preferredValue = _inputMode == InputModePlainBopomofo
+            ? nil
+            : [CandidateSelectionPersonalization preferredValueForReading:r];
+        if (preferredCandidate == nil && preferredValue != nil &&
+            [preferredValue isEqualToString:v]) {
+            preferredCandidate = candidate;
+        } else {
+            [candidatesArray addObject:candidate];
+        }
+    }
+    if (preferredCandidate != nil) {
+        [candidatesArray insertObject:preferredCandidate atIndex:0];
     }
 
     InputStateChoosingCandidate *state = [[InputStateChoosingCandidate alloc] initWithComposingBuffer:inputting.composingBuffer cursorIndex:inputting.cursorIndex candidates:candidatesArray useVerticalMode:useVerticalMode];
