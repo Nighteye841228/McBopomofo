@@ -170,6 +170,22 @@ enum LocalMain {
             fputs("Closing quote regression failed: \(closingQuote ?? "<nil>")\n", stderr)
             return 24
         }
+        let ellipsisHandler = KeyHandler()
+        ellipsisHandler.inputMode = .bopomofo
+        ellipsisHandler.syncWithPreferences()
+        var ellipsisState: InputState = InputState.Empty()
+        let ellipsisInput = KeyHandlerInput(
+            inputText: "…", keyCode: 41, charCode: "…".utf16.first ?? 0,
+            flags: .option, isVerticalMode: false, inputTextIgnoringModifiers: ";")
+        let ellipsisHandled = ellipsisHandler.handle(
+            input: ellipsisInput, state: ellipsisState,
+            stateCallback: { ellipsisState = $0 }, errorCallback: {})
+        guard ellipsisHandled,
+            (ellipsisState as? InputState.Inputting)?.composingBuffer == "……"
+        else {
+            fputs("Option-semicolon ellipsis regression failed\n", stderr)
+            return 26
+        }
         CandidateSelectionPersonalization.observe(reading: "ㄉㄨㄣ", value: "蹲")
         guard evaluate("2jp ") == "蹲" else {
             let actual = evaluate("2jp ") ?? "<not inputting>"

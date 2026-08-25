@@ -913,6 +913,42 @@ bool MixedResultIsExactChinese(const McBopomofo::MixedInputSegmenter::Result& re
     return YES;
 }
 
+- (BOOL)_handleOptionEllipsis:(KeyHandlerInput *)input
+                         state:(InputState *)state
+                 stateCallback:(void (^)(InputState *))stateCallback
+                  errorCallback:(void (^)(void))errorCallback
+{
+    if (![state isKindOfClass:[InputStateEmpty class]] &&
+        ![state isKindOfClass:[InputStateInputting class]]) {
+        return NO;
+    }
+    if (!input.isOptionHold || input.isCommandHold || input.isControlHold ||
+        ![input.inputText isEqualToString:@"…"] ||
+        ![input.inputTextIgnoringModifiers isEqualToString:@";"]) {
+        return NO;
+    }
+
+    constexpr const char *kOptionEllipsisReading = "_punctuation_option_ellipsis";
+    if (!_languageModel->hasUnigrams(kOptionEllipsisReading)) {
+        return NO;
+    }
+
+    if (!_mixedInputPending.empty()) {
+        [self _flushMixedInputWithBoundary:McBopomofo::MixedInputSegmenter::Boundary::kEnter
+                              appendSpace:NO
+                           interpretation:MixedInputInterpretation::kAutomatic];
+    } else if (_mixedInputDeferredSpace) {
+        [self _resolveMixedInputDeferredSpaceAsEnglish:
+                  _mixedInputDeferredSpace->rollbackOnHardBoundary];
+    }
+
+    return [self _handlePunctuation:kOptionEllipsisReading
+                              state:state
+                  usingVerticalMode:input.useVerticalMode
+                      stateCallback:stateCallback
+                       errorCallback:errorCallback];
+}
+
 - (BOOL)handleInput:(KeyHandlerInput *)input state:(InputState *)inState stateCallback:(void (^)(InputState *))stateCallback errorCallback:(void (^)(void))errorCallback
 {
     InputState *state = inState;
@@ -958,6 +994,13 @@ bool MixedResultIsExactChinese(const McBopomofo::MixedInputSegmenter::Result& re
     // if the inputText is empty, it's a function key combination, we ignore it
     if (!input.inputText.length) {
         return NO;
+    }
+
+    if ([self _handleOptionEllipsis:input
+                              state:state
+                      stateCallback:stateCallback
+                       errorCallback:errorCallback]) {
+        return YES;
     }
 
     // if the composing buffer is empty and there's no reading, and there is some function key combination, we ignore it

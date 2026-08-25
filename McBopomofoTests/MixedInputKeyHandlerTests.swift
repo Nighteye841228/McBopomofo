@@ -70,6 +70,21 @@ final class MixedInputKeyHandlerTests: XCTestCase {
     }
 
     @discardableResult
+    private func sendOptionEllipsis() -> Bool {
+        let input = KeyHandlerInput(
+            inputText: "…", keyCode: 41, charCode: charCode("…"), flags: .option,
+            isVerticalMode: false, inputTextIgnoringModifiers: ";")
+        return handler.handle(input: input, state: state) { [self] newState in
+            if let committing = newState as? InputState.Committing {
+                committedText += committing.poppedText
+            }
+            state = newState
+        } errorCallback: {
+            XCTFail("Option-semicolon should not report an input error")
+        }
+    }
+
+    @discardableResult
     private func sendDown() -> Bool {
         let input = KeyHandlerInput(
             inputText: " ", keyCode: KeyCode.down.rawValue, charCode: 0, flags: [],
@@ -270,6 +285,23 @@ final class MixedInputKeyHandlerTests: XCTestCase {
         sendKeys("apple")
         XCTAssertTrue(send("]"))
         XCTAssertEqual(composingBuffer, "apple」")
+    }
+
+    func testOptionSemicolonProducesChineseEllipsis() {
+        XCTAssertTrue(sendOptionEllipsis())
+        XCTAssertEqual(composingBuffer, "……")
+    }
+
+    func testOptionSemicolonFinalizesPendingEnglish() {
+        sendKeys("apple")
+        XCTAssertTrue(sendOptionEllipsis())
+        XCTAssertEqual(composingBuffer, "apple……")
+    }
+
+    func testOptionSemicolonAppendsAfterChinese() {
+        sendKeys("su3")
+        XCTAssertTrue(sendOptionEllipsis())
+        XCTAssertEqual(composingBuffer, "你……")
     }
 
     func testSingleCharacterSelectionBecomesPreferred() {
