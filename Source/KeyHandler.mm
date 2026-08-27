@@ -72,6 +72,11 @@ struct MixedInputCommittedChunk {
     size_t readingStart;
 };
 
+struct MixedInputDeferredUnderscore {
+    size_t readingIndex;
+    std::string punctuationReading;
+};
+
 bool MixedInputHasDomainEvidence(const std::string& raw)
 {
     return McBopomofo::MixedInputSegmenter::HasStructuralAsciiEvidence(raw) &&
@@ -111,6 +116,7 @@ bool MixedResultIsExactChinese(const McBopomofo::MixedInputSegmenter::Result& re
     bool _mixedInputLastBoundaryWasSpace;
     std::optional<MixedInputDeferredSpace> _mixedInputDeferredSpace;
     std::optional<MixedInputCommittedChunk> _mixedInputLastCommittedChunk;
+    std::optional<MixedInputDeferredUnderscore> _mixedInputDeferredUnderscore;
 
     // user override model
     McBopomofo::UserOverrideModel *_userOverrideModel;
@@ -172,6 +178,7 @@ bool MixedResultIsExactChinese(const McBopomofo::MixedInputSegmenter::Result& re
         _mixedInputLastBoundaryWasSpace = false;
         _mixedInputDeferredSpace.reset();
         _mixedInputLastCommittedChunk.reset();
+        _mixedInputDeferredUnderscore.reset();
 
         if (!_bpmfReadingBuffer->isEmpty()) {
             _bpmfReadingBuffer->clear();
@@ -405,6 +412,7 @@ bool MixedResultIsExactChinese(const McBopomofo::MixedInputSegmenter::Result& re
     _mixedInputLastBoundaryWasSpace = false;
     _mixedInputDeferredSpace.reset();
     _mixedInputLastCommittedChunk.reset();
+    _mixedInputDeferredUnderscore.reset();
     _grid->clear();
     _mixedLanguageModel->clearLiterals();
     _latestWalk = Formosa::Gramambular2::ReadingGrid::WalkResult {};
@@ -458,6 +466,68 @@ bool MixedResultIsExactChinese(const McBopomofo::MixedInputSegmenter::Result& re
         }
     }
     return NO;
+}
+
+- (BOOL)_mixedInputHasEnglishLiteralBeforeCursor
+{
+    if (_grid->cursor() == 0) {
+        return NO;
+    }
+
+    const std::string& reading = _grid->readings()[_grid->cursor() - 1];
+    if (!_mixedLanguageModel->isLiteralReading(reading)) {
+        return NO;
+    }
+
+    auto unigrams = _mixedLanguageModel->getUnigrams(reading);
+    if (unigrams.empty()) {
+        return NO;
+    }
+    const std::string& value = unigrams.front().value();
+    return value.size() == 1 &&
+        std::isalpha(static_cast<unsigned char>(value.front()));
+}
+
+- (void)_deferMixedInputUnderscoreAtIndex:(size_t)readingIndex
+                                  reading:(const std::string&)punctuationReading
+{
+    if (readingIndex >= _grid->length() ||
+        _grid->readings()[readingIndex] != punctuationReading) {
+        return;
+    }
+
+    auto unigrams = _languageModel->getUnigrams(punctuationReading);
+    if (unigrams.empty() || unigrams.front().value() != "—") {
+        return;
+    }
+
+    _mixedInputDeferredUnderscore = MixedInputDeferredUnderscore {
+        readingIndex,
+        punctuationReading,
+    };
+}
+
+- (BOOL)_resolveMixedInputDeferredUnderscoreAsEnglish:(BOOL)useEnglish
+{
+    if (!_mixedInputDeferredUnderscore) {
+        return NO;
+    }
+
+    const MixedInputDeferredUnderscore deferred = *_mixedInputDeferredUnderscore;
+    _mixedInputDeferredUnderscore.reset();
+    if (!useEnglish || deferred.readingIndex >= _grid->length() ||
+        _grid->readings()[deferred.readingIndex] != deferred.punctuationReading ||
+        _grid->cursor() <= deferred.readingIndex) {
+        return NO;
+    }
+
+    size_t originalCursor = _grid->cursor();
+    _grid->setCursor(deferred.readingIndex + 1);
+    _grid->deleteReadingBeforeCursor();
+    std::string underscore = _mixedLanguageModel->registerLiteral("_");
+    _grid->insertReading(underscore);
+    _grid->setCursor(originalCursor);
+    return YES;
 }
 
 - (void)_applyCandidateSelectionPreferences
@@ -673,6 +743,8 @@ bool MixedResultIsExactChinese(const McBopomofo::MixedInputSegmenter::Result& re
         _grid->insertReading(literal);
     }
 
+    [self _resolveMixedInputDeferredUnderscoreAsEnglish:useEnglish || !hasChinese];
+
     _mixedInputLastCommittedChunk.reset();
     if (!useEnglish && boundary == McBopomofo::MixedInputSegmenter::Boundary::kNone &&
         hasChinese && !exactChinese && _grid->cursor() > insertedReadingStart) {
@@ -765,13 +837,13 @@ bool MixedResultIsExactChinese(const McBopomofo::MixedInputSegmenter::Result& re
         _mixedInputPending.insert(0, legacyKeys);
         _bpmfReadingBuffer->clear();
     }
-    if (charCode == 13 && _mixedInputPending.empty() && _mixedInputDeferredSpace) {
-        [self _resolveMixedInputDeferredSpaceAsEnglish:
-                  _mixedInputDeferredSpace->rollbackOnHardBoundary];
-    }
-    if ((charCode == 27 || charCode == 8) && _mixedInputPending.empty() &&
-        _mixedInputDeferredSpace) {
+    if (charCode == 13 && _mixedInputPending.empty()) {
         [self _resolveMixedInputDeferredSpaceAsEnglish:NO];
+        [self _resolveMixedInputDeferredUnderscoreAsEnglish:NO];
+    }
+    if ((charCode == 27 || charCode == 8) && _mixedInputPending.empty()) {
+        [self _resolveMixedInputDeferredSpaceAsEnglish:NO];
+        [self _resolveMixedInputDeferredUnderscoreAsEnglish:NO];
     }
     if (charCode == 27 && !_mixedInputPending.empty()) {
         _mixedInputPending.clear();
@@ -809,6 +881,9 @@ bool MixedResultIsExactChinese(const McBopomofo::MixedInputSegmenter::Result& re
     if (isNavigationKey && _mixedInputPending.empty() && _mixedInputDeferredSpace) {
         [self _resolveMixedInputDeferredSpaceAsEnglish:NO];
     }
+    if (isNavigationKey && _mixedInputPending.empty()) {
+        [self _resolveMixedInputDeferredUnderscoreAsEnglish:NO];
+    }
     if (isNavigationKey && !_mixedInputPending.empty()) {
         [self _flushMixedInputWithBoundary:McBopomofo::MixedInputSegmenter::Boundary::kEnter
                               appendSpace:NO
@@ -819,6 +894,7 @@ bool MixedResultIsExactChinese(const McBopomofo::MixedInputSegmenter::Result& re
 
     if (input.isCommandHold || input.isOptionHold || input.isControlHold || input.isNumericPad) {
         [self _resolveMixedInputDeferredSpaceAsEnglish:NO];
+        [self _resolveMixedInputDeferredUnderscoreAsEnglish:NO];
         return NO;
     }
 
@@ -831,6 +907,7 @@ bool MixedResultIsExactChinese(const McBopomofo::MixedInputSegmenter::Result& re
     }
     if (charCode == 32 && [state isKindOfClass:[InputStateInputting class]]) {
         [self _resolveMixedInputDeferredSpaceAsEnglish:NO];
+        [self _resolveMixedInputDeferredUnderscoreAsEnglish:NO];
         std::string literal = _mixedLanguageModel->registerLiteral(" ");
         _grid->insertReading(literal);
         [self _walk];
@@ -840,6 +917,7 @@ bool MixedResultIsExactChinese(const McBopomofo::MixedInputSegmenter::Result& re
 
     if (charCode >= 0x80 || !McBopomofo::MixedInputSegmenter::IsSupportedAscii((char)charCode)) {
         [self _resolveMixedInputDeferredSpaceAsEnglish:NO];
+        [self _resolveMixedInputDeferredUnderscoreAsEnglish:NO];
         return NO;
     }
 
@@ -853,6 +931,7 @@ bool MixedResultIsExactChinese(const McBopomofo::MixedInputSegmenter::Result& re
             stateCallback([self buildInputtingState]);
         } else {
             [self _resolveMixedInputDeferredSpaceAsEnglish:NO];
+            [self _resolveMixedInputDeferredUnderscoreAsEnglish:NO];
         }
         return NO;
     }
@@ -860,6 +939,7 @@ bool MixedResultIsExactChinese(const McBopomofo::MixedInputSegmenter::Result& re
         isLetter || isBopomofoKey;
     if (!startsOrContinuesToken) {
         [self _resolveMixedInputDeferredSpaceAsEnglish:NO];
+        [self _resolveMixedInputDeferredUnderscoreAsEnglish:NO];
         return NO;
     }
 
@@ -878,6 +958,7 @@ bool MixedResultIsExactChinese(const McBopomofo::MixedInputSegmenter::Result& re
         char uppercase = (char)std::toupper(static_cast<unsigned char>(charCode));
         std::string literal = _mixedLanguageModel->registerLiteral(std::string(1, uppercase));
         _grid->insertReading(literal);
+        [self _resolveMixedInputDeferredUnderscoreAsEnglish:YES];
         _mixedInputLastRaw.clear();
         _mixedInputLastReadingIndex.reset();
         _mixedInputLastBoundaryWasSpace = false;
@@ -940,6 +1021,9 @@ bool MixedResultIsExactChinese(const McBopomofo::MixedInputSegmenter::Result& re
     } else if (_mixedInputDeferredSpace) {
         [self _resolveMixedInputDeferredSpaceAsEnglish:
                   _mixedInputDeferredSpace->rollbackOnHardBoundary];
+        [self _resolveMixedInputDeferredUnderscoreAsEnglish:NO];
+    } else {
+        [self _resolveMixedInputDeferredUnderscoreAsEnglish:NO];
     }
 
     return [self _handlePunctuation:kOptionEllipsisReading
@@ -1009,8 +1093,15 @@ bool MixedResultIsExactChinese(const McBopomofo::MixedInputSegmenter::Result& re
         return NO;
     }
 
+    BOOL shouldRefreshMixedStateAfterEnter = charCode == 13 &&
+        [state isKindOfClass:[InputStateInputting class]] &&
+        !_mixedInputPending.empty() &&
+        (_mixedInputDeferredSpace.has_value() || _mixedInputDeferredUnderscore.has_value());
     if ([self _handleMixedInput:input state:state stateCallback:stateCallback]) {
         return YES;
+    }
+    if (shouldRefreshMixedStateAfterEnter) {
+        state = [self buildInputtingState];
     }
 
     // Caps Lock processing : if Caps Lock is on, temporarily disable bopomofo.
@@ -1428,15 +1519,27 @@ bool MixedResultIsExactChinese(const McBopomofo::MixedInputSegmenter::Result& re
     } else {
         punctuationNamePrefix = "_punctuation_";
     }
+    BOOL shouldDeferContextualUnderscore = [self _mixedInputIsEnabled] &&
+        punctuationNamePrefix == "_punctuation_" && charCode == '_' &&
+        [self _mixedInputHasEnglishLiteralBeforeCursor];
+    size_t contextualUnderscoreIndex = _grid->cursor();
     std::string layout = [self _currentLayout];
     std::string customPunctuation = punctuationNamePrefix + layout + std::string(1, (char)charCode);
     if ([self _handlePunctuation:customPunctuation state:state usingVerticalMode:input.useVerticalMode stateCallback:stateCallback errorCallback:errorCallback]) {
+        if (shouldDeferContextualUnderscore) {
+            [self _deferMixedInputUnderscoreAtIndex:contextualUnderscoreIndex
+                                           reading:customPunctuation];
+        }
         return YES;
     }
 
     // if nothing is matched, see if it's a punctuation key.
     std::string punctuation = punctuationNamePrefix + std::string(1, (char)charCode);
     if ([self _handlePunctuation:punctuation state:state usingVerticalMode:input.useVerticalMode stateCallback:stateCallback errorCallback:errorCallback]) {
+        if (shouldDeferContextualUnderscore) {
+            [self _deferMixedInputUnderscoreAtIndex:contextualUnderscoreIndex
+                                           reading:punctuation];
+        }
         return YES;
     }
 

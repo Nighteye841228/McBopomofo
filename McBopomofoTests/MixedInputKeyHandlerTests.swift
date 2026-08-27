@@ -69,6 +69,12 @@ final class MixedInputKeyHandlerTests: XCTestCase {
         }
     }
 
+    private func sendShiftedKeys(_ keys: String) {
+        for key in keys {
+            XCTAssertTrue(send(String(key), flags: .shift))
+        }
+    }
+
     @discardableResult
     private func sendOptionEllipsis() -> Bool {
         let input = KeyHandlerInput(
@@ -129,6 +135,28 @@ final class MixedInputKeyHandlerTests: XCTestCase {
         sendKeys("ji")
         XCTAssertTrue(send("\r"))
         XCTAssertEqual(committedText, "ji")
+        XCTAssertTrue(state is InputState.Empty)
+    }
+
+    func testEnterFinalizesTwoEnglishWordsUsingFreshState() {
+        sendKeys("apple")
+        XCTAssertTrue(send(" "))
+        XCTAssertEqual(composingBuffer, "app高")
+        sendKeys("doctor")
+        XCTAssertEqual(composingBuffer, "app高doctor")
+
+        XCTAssertTrue(send("\r"))
+        XCTAssertEqual(committedText, "apple doctor")
+        XCTAssertTrue(state is InputState.Empty)
+    }
+
+    func testEnterDoesNotRollbackASingleAmbiguousWord() {
+        sendKeys("apple")
+        XCTAssertTrue(send(" "))
+        XCTAssertEqual(composingBuffer, "app高")
+
+        XCTAssertTrue(send("\r"))
+        XCTAssertEqual(committedText, "app高")
         XCTAssertTrue(state is InputState.Empty)
     }
 
@@ -302,6 +330,40 @@ final class MixedInputKeyHandlerTests: XCTestCase {
         sendKeys("su3")
         XCTAssertTrue(sendOptionEllipsis())
         XCTAssertEqual(composingBuffer, "你……")
+    }
+
+    func testUnderscoreKeyBetweenExplicitEnglishSegmentsBecomesLiteral() {
+        sendShiftedKeys("RUST")
+        XCTAssertTrue(send("_", flags: .shift))
+        XCTAssertEqual(composingBuffer, "RUST—")
+
+        sendShiftedKeys("GUI")
+        XCTAssertEqual(composingBuffer, "RUST_GUI")
+    }
+
+    func testUnderscoreKeyBeforeChineseKeepsEmDash() {
+        sendShiftedKeys("RUST")
+        XCTAssertTrue(send("_", flags: .shift))
+        sendKeys("su3")
+        XCTAssertEqual(composingBuffer, "RUST—你")
+    }
+
+    func testUnderscoreKeyAfterChineseKeepsEmDash() {
+        sendKeys("su3")
+        XCTAssertTrue(send("_", flags: .shift))
+        sendShiftedKeys("GUI")
+        XCTAssertEqual(composingBuffer, "你—GUI")
+    }
+
+    func testEnterFinalizesLowercaseIdentifierWithUnderscore() {
+        sendKeys("rust")
+        XCTAssertTrue(send("_", flags: .shift))
+        sendKeys("doctor")
+        XCTAssertEqual(composingBuffer, "rust—doctor")
+
+        XCTAssertTrue(send("\r"))
+        XCTAssertEqual(committedText, "rust_doctor")
+        XCTAssertTrue(state is InputState.Empty)
     }
 
     func testSingleCharacterSelectionBecomesPreferred() {

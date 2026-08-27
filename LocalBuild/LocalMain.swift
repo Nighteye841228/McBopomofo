@@ -104,6 +104,33 @@ enum LocalMain {
             evaluateInputs(keys.map { (String($0), NSEvent.ModifierFlags()) })
         }
 
+        func evaluateCommitted(_ keys: String) -> String? {
+            let handler = KeyHandler()
+            handler.inputMode = .bopomofo
+            handler.syncWithPreferences()
+            var state: InputState = InputState.Empty()
+            var committed = ""
+            var inputError = false
+            for text in keys.map({ String($0) }) {
+                let input = KeyHandlerInput(
+                    inputText: text, keyCode: 0, charCode: text.utf16.first ?? 0,
+                    flags: [], isVerticalMode: false)
+                let handled = handler.handle(
+                    input: input, state: state,
+                    stateCallback: { newState in
+                        if let committing = newState as? InputState.Committing {
+                            committed += committing.poppedText
+                        }
+                        state = newState
+                    },
+                    errorCallback: { inputError = true })
+                if !handled || inputError {
+                    return nil
+                }
+            }
+            return state is InputState.Empty ? committed : nil
+        }
+
         let coreInput = "ji3vu04y94callsu3"
         guard evaluate(coreInput) == "我現在call你" else {
             let actual = evaluate(coreInput) ?? "<not inputting>"
@@ -185,6 +212,34 @@ enum LocalMain {
         else {
             fputs("Option-semicolon ellipsis regression failed\n", stderr)
             return 26
+        }
+        guard evaluateCommitted("apple doctor\r") == "apple doctor" else {
+            fputs("Two-word Enter regression failed\n", stderr)
+            return 27
+        }
+        let contextualUnderscore = evaluateInputs([
+            ("R", .shift), ("U", .shift), ("S", .shift), ("T", .shift),
+            ("_", .shift),
+            ("G", .shift), ("U", .shift), ("I", .shift),
+        ])
+        let dashBeforeChinese = evaluateInputs([
+            ("R", .shift), ("U", .shift), ("S", .shift), ("T", .shift),
+            ("_", .shift),
+            ("s", []), ("u", []), ("3", []),
+        ])
+        let singleAmbiguousWord = evaluateCommitted("apple \r")
+        let lowercaseIdentifier = evaluateCommitted("rust_doctor\r")
+        guard contextualUnderscore == "RUST_GUI", dashBeforeChinese == "RUST—你",
+            singleAmbiguousWord == "app高", lowercaseIdentifier == "rust_doctor"
+        else {
+            fputs(
+                "Contextual underscore regression failed: "
+                    + "identifier=\(contextualUnderscore ?? "<nil>"), "
+                    + "Chinese=\(dashBeforeChinese ?? "<nil>"), "
+                    + "single=\(singleAmbiguousWord ?? "<nil>"), "
+                    + "lowercase=\(lowercaseIdentifier ?? "<nil>")\n",
+                stderr)
+            return 28
         }
         CandidateSelectionPersonalization.observe(reading: "ㄉㄨㄣ", value: "蹲")
         guard evaluate("2jp ") == "蹲" else {
