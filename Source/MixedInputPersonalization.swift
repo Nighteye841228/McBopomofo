@@ -18,14 +18,22 @@ final class MixedInputPersonalization: NSObject {
         var chineseCount: Int
     }
 
+    private struct Choice: Codable {
+        var day: Int
+        var english: Bool
+    }
+
     private struct Store: Codable {
         var version = 1
         var entries: [String: [Bucket]] = [:]
+        // Optional to preserve preferences saved before recent-choice learning.
+        var recentChoices: [String: [Choice]]?
     }
 
     static let dataKey = "MixedInputPersonalizationDataV1"
     static let saltKey = "MixedInputPersonalizationSaltV1"
     private static let retentionDays = 30
+    private static let capacity = 2_000
 
     @objc(preferenceForRawInput:boundary:)
     static func preference(forRawInput rawInput: String, boundary: String) -> MixedInputPreference {
@@ -50,32 +58,63 @@ final class MixedInputPersonalization: NSObject {
             return .neutral
         }
 
-        let day = utcDay(for: now)
-        var store = loadStore(defaults: defaults)
-        prune(store: &store, currentDay: day)
+        let store = prunedStore(defaults: defaults, currentDay: utcDay(for: now))
+        let key = signature(
+            rawInput: rawInput, boundary: boundary, defaults: defaults, createSalt: false)
+        return storedPreference(store: store, key: key)
+    }
+
+    private static func prunedStore(defaults: UserDefaults, currentDay: Int) -> Store {
+        let store = pruned(
+            store: loadStore(defaults: defaults), currentDay: currentDay,
+            retentionDays: retentionDays)
         if defaults.data(forKey: dataKey) != nil {
             save(store: store, defaults: defaults)
         }
-        let key = signature(
-            rawInput: rawInput, boundary: boundary, defaults: defaults, createSalt: false)
-        guard let key, let buckets = store.entries[key] else {
-            return .neutral
-        }
+        return store
+    }
 
-        let english = buckets.reduce(0) { $0 + $1.englishCount }
-        let chinese = buckets.reduce(0) { $0 + $1.chineseCount }
-        guard english + chinese >= 3 else {
-            return .neutral
-        }
+    private static func storedPreference(store: Store, key: String?) -> MixedInputPreference {
+        guard let key else { return .neutral }
+        return tokenPreference(store: store, key: key)
+    }
 
-        let englishProbability = Double(english + 1) / Double(english + chinese + 2)
-        if englishProbability >= 0.8 {
-            return .english
+    private static func tokenPreference(store: Store, key: String) -> MixedInputPreference {
+        if let choices = store.recentChoices?[key] {
+            return recentPreference(choices: choices)
         }
-        if englishProbability <= 0.2 {
-            return .chinese
-        }
-        return .neutral
+        return historicalPreference(buckets: store.entries[key] ?? [])
+    }
+
+    private static func recentPreference(choices: [Choice]) -> MixedInputPreference {
+        guard choices.count >= 3 else { return .neutral }
+        let englishCount = choices.suffix(3).filter(\.english).count
+        return [0: MixedInputPreference.chinese, 3: .english][englishCount] ?? .neutral
+    }
+
+    private static func historicalPreference(buckets: [Bucket]) -> MixedInputPreference {
+        let valid = buckets.filter(validHistoricalBucket)
+        let english = valid.reduce(0.0) { $0 + Double($1.englishCount) }
+        let chinese = valid.reduce(0.0) { $0 + Double($1.chineseCount) }
+        guard english + chinese >= 3 else { return .neutral }
+        let probability = (english + 1) / (english + chinese + 2)
+        return probabilityPreference(englishProbability: probability)
+    }
+
+    private static func validHistoricalBucket(_ bucket: Bucket) -> Bool {
+        let validCount = 0...1_000_000
+        return validCount.contains(bucket.englishCount) && validCount.contains(bucket.chineseCount)
+    }
+
+    private static func probabilityPreference(englishProbability: Double) -> MixedInputPreference {
+        if englishProbability >= 0.8 { return .english }
+        return chineseProbabilityPreference(englishProbability: englishProbability)
+    }
+
+    private static func chineseProbabilityPreference(
+        englishProbability: Double
+    ) -> MixedInputPreference {
+        englishProbability <= 0.2 ? .chinese : .neutral
     }
 
     static func observe(
@@ -86,31 +125,49 @@ final class MixedInputPersonalization: NSObject {
             return
         }
 
-        let day = utcDay(for: now)
-        var store = loadStore(defaults: defaults)
-        prune(store: &store, currentDay: day)
-        guard
-            let key = signature(
-                rawInput: rawInput, boundary: boundary, defaults: defaults, createSalt: true)
-        else {
-            return
-        }
+        let key = signature(
+            rawInput: rawInput, boundary: boundary, defaults: defaults, createSalt: true)
+        recordChoice(key: key, selectedEnglish: selectedEnglish, defaults: defaults, now: now)
+    }
 
-        var buckets = store.entries[key] ?? []
-        if let index = buckets.firstIndex(where: { $0.day == day }) {
-            if selectedEnglish {
-                buckets[index].englishCount += 1
-            } else {
-                buckets[index].chineseCount += 1
-            }
-        } else {
-            buckets.append(
-                Bucket(
-                    day: day, englishCount: selectedEnglish ? 1 : 0,
-                    chineseCount: selectedEnglish ? 0 : 1))
-        }
-        store.entries[key] = buckets.sorted { $0.day < $1.day }
-        save(store: store, defaults: defaults)
+    private static func recordChoice(
+        key: String?, selectedEnglish: Bool, defaults: UserDefaults, now: Date
+    ) {
+        guard let key else { return }
+        let day = utcDay(for: now)
+        let store = pruned(
+            store: loadStore(defaults: defaults), currentDay: day,
+            retentionDays: retentionDays)
+        let updated = recording(
+            choice: Choice(day: day, english: selectedEnglish), key: key, store: store)
+        save(store: limited(store: updated, preserving: key, capacity: capacity), defaults: defaults)
+    }
+
+    private static func limited(store: Store, preserving key: String, capacity: Int) -> Store {
+        let recentKeys = store.entries.keys.filter { $0 != key }.sorted { lhs, rhs in
+            (latestDay(store: store, key: lhs), lhs) > (latestDay(store: store, key: rhs), rhs)
+        }.prefix(capacity - 1)
+        let retained = Set(recentKeys).union([key])
+        var result = store
+        result.entries = store.entries.filter { retained.contains($0.key) }
+        result.recentChoices = store.recentChoices?.filter { retained.contains($0.key) }
+        return result
+    }
+
+    private static func latestDay(store: Store, key: String) -> Int {
+        store.entries[key]?.map(\.day).max() ?? Int.min
+    }
+
+    private static func recording(choice: Choice, key: String, store: Store) -> Store {
+        // Only explicit candidate choices enter this window. Three consistent
+        // corrections can replace an old habit without reinforcing predictions.
+        let previousChoices = store.recentChoices?[key] ?? []
+        var recent = store.recentChoices ?? [:]
+        recent[key] = Array((previousChoices + [choice]).suffix(3))
+        var updated = store
+        updated.recentChoices = recent
+        updated.entries[key] = [Bucket(day: choice.day, englishCount: 0, chineseCount: 0)]
+        return updated
     }
 
     static func reset(defaults: UserDefaults = .standard) {
@@ -138,31 +195,50 @@ final class MixedInputPersonalization: NSObject {
         defaults.set(data, forKey: dataKey)
     }
 
-    private static func prune(store: inout Store, currentDay: Int) {
-        let earliestDay = currentDay - retentionDays + 1
-        store.entries = store.entries.reduce(into: [:]) { result, item in
-            let buckets = item.value.filter { $0.day >= earliestDay && $0.day <= currentDay }
-            if !buckets.isEmpty {
-                result[item.key] = buckets
-            }
-        }
+    private static func pruned(store: Store, currentDay: Int, retentionDays: Int) -> Store {
+        let validDays = (currentDay - retentionDays + 1)...currentDay
+        var updated = store
+        updated.entries = store.entries.mapValues { buckets in
+            buckets.filter { validDays.contains($0.day) }
+        }.filter { !$0.value.isEmpty }
+        updated.recentChoices = store.recentChoices?.mapValues { choices in
+            choices.filter { validDays.contains($0.day) }
+        }.filter { !$0.value.isEmpty }
+        return updated
+    }
+
+    private static func normalizedBoundary(_ boundary: String) -> String {
+        let sharedBoundaries = ["candidate", "space", "enter", "punctuation"]
+        return sharedBoundaries.contains(boundary) ? "candidate" : boundary
     }
 
     private static func signature(
         rawInput: String, boundary: String, defaults: UserDefaults, createSalt: Bool
     ) -> String? {
-        var salt = defaults.string(forKey: saltKey)
-        if salt == nil && createSalt {
-            salt = UUID().uuidString
-            defaults.set(salt, forKey: saltKey)
+        salt(defaults: defaults, create: createSalt).map { salt in
+            hashedSignature(rawInput: rawInput, boundary: normalizedBoundary(boundary), salt: salt)
         }
-        guard let salt else {
-            return nil
-        }
+    }
 
+    private static func hashedSignature(rawInput: String, boundary: String, salt: String) -> String {
         let data = Data("\(salt)\u{0}\(rawInput)\u{0}\(boundary)".utf8)
         return SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
     }
+
+    private static func salt(defaults: UserDefaults, create: Bool) -> String? {
+        if let existing = defaults.string(forKey: saltKey) {
+            return existing
+        }
+        return createSalt(defaults: defaults, enabled: create)
+    }
+
+    private static func createSalt(defaults: UserDefaults, enabled: Bool) -> String? {
+        guard enabled else { return nil }
+        let salt = UUID().uuidString
+        defaults.set(salt, forKey: saltKey)
+        return salt
+    }
+
 }
 
 @objc(CandidateSelectionPersonalization)
